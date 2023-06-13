@@ -1,12 +1,12 @@
+use crate::messages::{ui::UIMessage, IOMessage};
+use crate::ui::ui_app::UIApp;
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
-use std::sync::Arc;
-use crate::messages::{IOMessage, ui::UIMessage};
-use crate::ui::ui_app::UIApp;
 
 mod ui_app;
 
-pub struct UI{
+pub struct UI {
     ui_app: Arc<Mutex<UIApp>>,
 }
 
@@ -17,10 +17,8 @@ impl UI {
         }
     }
 
-
-
     pub(crate) fn handle(&mut self, m: UIMessage) {
-        match m{
+        match m {
             UIMessage::Initialize => {
                 println!("UIMessage::Initialize");
             }

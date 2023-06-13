@@ -1,5 +1,5 @@
-use tokio::sync::mpsc::Sender;
 use crate::messages::IOMessage;
+use tokio::sync::mpsc::Sender;
 
 /// The ui application, containing the ui state
 pub struct UIApp {
@@ -8,8 +8,6 @@ pub struct UIApp {
 
 impl UIApp {
     pub(crate) fn new(io_sender: Sender<IOMessage>) -> Self {
-        Self {
-            io_sender
-        }
+        Self { io_sender }
     }
 }
