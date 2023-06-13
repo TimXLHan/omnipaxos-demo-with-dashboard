@@ -22,6 +22,7 @@ impl UI {
             UIMessage::Initialize => {
                 println!("UIMessage::Initialize");
             }
+            _ => unimplemented!(),
         }
     }
 }

@@ -53,6 +53,7 @@ impl Network {
         let peers = PEERS.clone();
         let mut peer_addrs = HashMap::new();
         for i in 0..PEERS.len() {
+            println!("peers ={}  peers addr={}", PEERS[i], PEER_ADDRS[i]);
             peer_addrs.insert(PEERS[i], PEER_ADDRS[i].clone());
         }
         let api_stream = TcpStream::connect(API_ADDR.clone()).await.unwrap();
