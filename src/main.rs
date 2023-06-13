@@ -1,4 +1,6 @@
+use crate::messages::db::DBMessage;
 use crate::messages::IOMessage;
+use crate::messages::ui::UIMessage;
 use crate::utils::*;
 
 mod utils;
@@ -14,8 +16,12 @@ async fn main() {
     let mut db = db::DB::new(io_sender.clone());
     let mut controller = controller::Controller::new(ui, db, io_receiver);
 
+    io_sender.send(IOMessage::UIMessage(UIMessage::Initialize)).await.unwrap();
+    io_sender.send(IOMessage::DBMessage(DBMessage::Initialize)).await.unwrap();
+
     tokio::spawn(async move {
         controller.run().await;
-    }).await.expect("Error in controller::run()"); 
+    }).await.expect("Error in controller::run()");
+
 
 }
