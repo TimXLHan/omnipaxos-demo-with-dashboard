@@ -24,8 +24,8 @@ impl Controller {
                 self.cd_sender.send(cd_m).await.unwrap();
             }
             IOMessage::UIMessage(ui_m) => {
-                println!("{:?}", ui_m);
-                //self.ui.handle(ui_m);
+                // println!("{:?}", ui_m);
+                self.ui.handle(ui_m).await;
             }
         }
     }
