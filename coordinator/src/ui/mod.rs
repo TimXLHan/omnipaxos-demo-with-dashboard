@@ -1,3 +1,6 @@
+use crate::messages::{ui::UIMessage, IOMessage};
+use crate::ui::ui_app::UIApp;
+use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tui::backend::Backend;
@@ -12,7 +15,7 @@ use crate::ui::ui_app::UIApp;
 
 mod ui_app;
 
-pub struct UI {
+pub struct UI{
     ui_app: Arc<Mutex<UIApp>>,
 }
 
@@ -28,6 +31,7 @@ impl UI {
             UIMessage::Initialize => {
                 self.start();
             }
+            _ => unimplemented!(),
         }
     }
 

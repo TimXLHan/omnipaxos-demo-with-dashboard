@@ -1,5 +1,5 @@
-use tokio::sync::mpsc::Sender;
 use crate::messages::IOMessage;
+use tokio::sync::mpsc::Sender;
 
 pub mod render;
 
@@ -10,8 +10,6 @@ pub struct UIApp {
 
 impl UIApp {
     pub(crate) fn new(io_sender: Sender<IOMessage>) -> Self {
-        Self {
-            io_sender
-        }
+        Self { io_sender }
     }
 }
