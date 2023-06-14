@@ -1,7 +1,7 @@
 use tokio::join;
 use tokio::sync::mpsc;
 
-use crate::messages::{coordinator::CDMessage, IOMessage};
+use crate::messages::{coordinator::CDMessage, IOMessage, ui::UIMessage};
 use crate::utils::*;
 
 #[macro_use]
@@ -21,5 +21,8 @@ async fn main() {
     let mut cd = coordinator::Coordinator::new(cd_receiver, io_sender.clone());
     let mut controller = controller::Controller::new(ui, io_receiver, cd_sender);
 
-    join!(cd.run(), controller.run());
+    io_sender.send(IOMessage::UIMessage(UIMessage::Initialize)).await.unwrap();
+    // join!(cd.run(), controller.run());
+    join!(controller.run());
+
 }
