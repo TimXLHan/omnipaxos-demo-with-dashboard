@@ -49,8 +49,6 @@ type OmniPaxosKV = OmniPaxos<KVCommand, MemoryStorage<KVCommand>>;
 
 #[tokio::main]
 async fn main() {
-    // TODO: need to wait for network actor to listen before trying to connet on sockets...
-    std::thread::sleep(std::time::Duration::from_secs(2));
     let server_config = ServerConfig {
         pid: *PID,
         ..Default::default()
