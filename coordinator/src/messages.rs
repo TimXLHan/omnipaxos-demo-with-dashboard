@@ -9,7 +9,7 @@ pub mod coordinator {
     pub enum CDMessage {
         Initialize, // Launch to initialize the application
         KVCommand(KVCommand),
-        Partition(u64, u64),
+        SetConnection(u64, u64, bool),
     }
 
     /// Same as in KV demo
@@ -35,12 +35,15 @@ pub mod coordinator {
 }
 
 pub mod ui {
+    use crate::coordinator::NetworkState;
+
     use super::coordinator::APIResponse;
 
     #[derive(Debug, Clone)]
     pub enum UIMessage {
         Initialize, // Launch to initialize the application
         OmnipaxosResponse(APIResponse),
+        OmnipaxosNetworkUpdate(NetworkState),
         OmnipaxosNodeCrashed(u64),
         ClusterUnreachable,
     }

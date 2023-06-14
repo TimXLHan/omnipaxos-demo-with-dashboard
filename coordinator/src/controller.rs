@@ -1,6 +1,6 @@
-use crate::{messages::IOMessage, coordinator::KeyValue};
 use crate::messages::coordinator::CDMessage;
 use crate::ui::UI;
+use crate::messages::IOMessage;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 pub struct Controller {
@@ -29,16 +29,12 @@ impl Controller {
             }
         }
     }
-    
-    pub async fn run(&mut self) {
-        self.cd_sender.send(CDMessage::Initialize).await.expect("Couldn't start Coordinator");
 
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        let kv = KeyValue { key: "a".to_string(), value: "test".to_string() };
-        self.cd_sender.send(CDMessage::KVCommand(crate::messages::coordinator::KVCommand::Put(kv))).await.expect("Couldn't send to Coordinator");
-        
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        self.cd_sender.send(CDMessage::KVCommand(crate::messages::coordinator::KVCommand::Get("a".to_string()))).await.unwrap();
+    pub async fn run(&mut self) {
+        self.cd_sender
+            .send(CDMessage::Initialize)
+            .await
+            .expect("Couldn't start Coordinator");
 
         while let Some(m) = self.io_receiver.recv().await {
             self.handle(m).await;
