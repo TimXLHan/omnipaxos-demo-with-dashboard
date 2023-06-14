@@ -1,23 +1,18 @@
-use crate::messages::coordinator::{APIResponse, CDMessage, Message};
+use crate::messages::coordinator::{CDMessage, Message};
 use crate::messages::ui::UIMessage;
 use crate::messages::IOMessage;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use tokio::join;
+use std::collections::HashSet;
 use std::env;
-use std::{
-    collections::HashMap,
-    io::{stdout, Write},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc};
+use tokio::join;
 use tokio::net::tcp::OwnedWriteHalf;
-use tokio::sync::mpsc::{Sender, Receiver};
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,
     sync::{broadcast, mpsc, Mutex},
-    time::sleep,
 };
 
 lazy_static! {
@@ -50,11 +45,19 @@ pub struct KeyValue {
     pub value: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct NetworkState {
+    nodes: Vec<u64>,
+    alive_nodes: Vec<u64>,
+    partitions: HashSet<(u64, u64)>,
+}
+
 pub struct Coordinator {
     receiver: Receiver<CDMessage>,
     io_sender: Sender<IOMessage>,
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
-    partitions: Arc<Mutex<Vec<(u64, u64, f32)>>>,
+    partitions: Arc<Mutex<HashSet<(u64, u64)>>>,
+    nodes: Vec<u64>,
 }
 
 impl Coordinator {
@@ -63,11 +66,29 @@ impl Coordinator {
             receiver,
             io_sender,
             op_sockets: Arc::new(Mutex::new(HashMap::new())),
-            partitions: Arc::new(Mutex::new(vec![])),
+            partitions: Arc::new(Mutex::new(HashSet::new())),
+            nodes: vec![],
         }
     }
 
-    async fn create_omnipaxos_listeners(op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>, sender: Sender<IOMessage>) {
+    async fn create_network_state(&self) -> NetworkState {
+        NetworkState {
+            nodes: self.nodes.clone(),
+            alive_nodes: self
+                .op_sockets
+                .lock()
+                .await
+                .keys()
+                .map(|&key| key)
+                .collect(),
+            partitions: self.partitions.lock().await.clone(),
+        }
+    }
+
+    async fn create_omnipaxos_listeners(
+        op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
+        sender: Sender<IOMessage>,
+    ) {
         // setup client sockets to talk to nodes
         for port in CLIENT_PORTS.iter() {
             let op_sockets = op_sockets.clone();
@@ -89,15 +110,21 @@ impl Coordinator {
                         let bytes_read = reader.read_until(b'\n', &mut data).await.unwrap();
                         if bytes_read == 0 {
                             // dropped socket EOF
-                            sender.send(IOMessage::UIMessage(UIMessage::OmnipaxosNodeCrashed(*port))).await.unwrap();
+                            sender
+                                .send(IOMessage::UIMessage(UIMessage::OmnipaxosNodeCrashed(*port)))
+                                .await
+                                .unwrap();
                             op_sockets.lock().await.remove(port);
                             break;
                         }
                         if let Ok(msg) = serde_json::from_slice::<Message>(&data) {
                             if let Message::APIResponse(response) = msg {
-                                sender.send(IOMessage::UIMessage(UIMessage::OmnipaxosResponse(
-                                    response,
-                                ))).await.unwrap();
+                                sender
+                                    .send(IOMessage::UIMessage(UIMessage::OmnipaxosResponse(
+                                        response,
+                                    )))
+                                    .await
+                                    .unwrap();
                             }
                         }
                     }
@@ -106,7 +133,7 @@ impl Coordinator {
         }
     }
 
-    async fn create_network_actor(partitions: Arc<Mutex<Vec<(u64, u64, f32)>>>) {
+    async fn create_network_actor(partitions: Arc<Mutex<HashSet<(u64, u64)>>>) {
         // setup intra-cluster communication
         //let partitions: Arc<Mutex<Vec<(u64, u64, f32)>>> = Arc::new(Mutex::new(vec![]));
         let mut out_channels = HashMap::new();
@@ -159,106 +186,79 @@ impl Coordinator {
         // the one central actor that sees all messages
         while let Some((from_port, to_port, msg)) = central_receiver.recv().await {
             // drop message if network is partitioned between sender and receiver
-            for (from, to, _probability) in partitions.lock().await.iter() {
-                if from == from_port && to == to_port {
-                    continue;
-                }
+            let nodes_are_connected = !partitions.lock().await.contains(&(*from_port, *to_port));
+            if nodes_are_connected {
+                let sender = out_channels.get(to_port).unwrap().clone();
+                if let Err(e) = sender.send(msg) {
+                    println!(
+                        "DEBUG: senderror on out_sender for port {:?}: {:?}",
+                        to_port, e
+                    );
+                };
             }
-            let sender = out_channels.get(to_port).unwrap().clone();
-            if let Err(e) = sender.send(msg) {
-                println!(
-                    "DEBUG: senderror on out_sender for port {:?}: {:?}",
-                    to_port, e
-                );
-            };
         }
     }
 
     pub async fn run(&mut self) {
         println!("Coordinator running");
-        let op_sockets = self.op_sockets.clone();
-        let sender = self.io_sender.clone();
         while let Some(m) = self.receiver.recv().await {
             match m {
                 CDMessage::Initialize => {
                     println!("Coordinator initialized");
+                    self.nodes = CLIENT_PORTS.clone();
                     let op_sockets = self.op_sockets.clone();
-                    let sender = self.io_sender.clone();
-                    tokio::spawn(async move {
-                        Coordinator::create_omnipaxos_listeners(op_sockets, sender).await
-                    });
+                    let io_sender = self.io_sender.clone();
                     let partitions = self.partitions.clone();
-                    tokio::spawn(Coordinator::create_network_actor(partitions));
+                    join!(
+                        Coordinator::create_omnipaxos_listeners(op_sockets, io_sender),
+                        Coordinator::create_network_actor(partitions)
+                    );
+                    let cluster = self.create_network_state().await;
+                    self.io_sender
+                        .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
+                            cluster,
+                        )))
+                        .await
+                        .unwrap();
                 }
                 CDMessage::KVCommand(command) => {
                     let mut sent_command = false;
                     for port in CLIENT_PORTS.iter() {
-                        if let Some(writer) = op_sockets.lock().await.get_mut(port) {
+                        if let Some(writer) = self.op_sockets.lock().await.get_mut(port) {
                             let cmd = Message::APICommand(command);
-                            let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
+                            let mut data =
+                                serde_json::to_vec(&cmd).expect("could not serialize cmd");
                             data.push(b'\n');
                             writer.write_all(&data).await.unwrap();
+                            println!("send KV command to {port}");
                             sent_command = true;
                             break;
                         }
                     }
                     if !sent_command {
-                        sender.send(IOMessage::UIMessage(UIMessage::ClusterUnreachable)).await.unwrap();
+                        self.io_sender
+                            .send(IOMessage::UIMessage(UIMessage::ClusterUnreachable))
+                            .await
+                            .unwrap();
                     }
                 }
-                CDMessage::Partition(from, to) => {
-                    for (f, t ,w) in self.partitions.lock().await.iter_mut() {
-                        if *f == from && *t == to {
-                            *w = 0.0;
-                        }
+                CDMessage::SetConnection(from, to, is_connected) => {
+                    let mut partitions = self.partitions.lock().await;
+                    let networked_updated = match is_connected {
+                        true => partitions.insert((from, to)),
+                        false => partitions.remove(&(from, to)),
+                    };
+                    if networked_updated {
+                        let cluster = self.create_network_state().await;
+                        self.io_sender
+                            .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
+                                cluster,
+                            )))
+                            .await
+                            .unwrap();
                     }
                 }
             }
         }
-
-
-
-        // join!(
-        //     self.create_omnipaxos_listeners(), 
-        //     self.create_network_actor(),
-        //     self.create_io_listener()
-        // );
-
-        // // Handle user input to propose values
-        // let api = api_sockets.clone();
-        // tokio::spawn(async move {
-        //     loop {
-        //         // Get input
-        //         let mut input = String::new();
-        //         print!("Type a command here <put/delete/get> <args>: ");
-        //         let _ = stdout().flush();
-        //         let mut reader = BufReader::new(tokio::io::stdin());
-        //         reader.read_line(&mut input).await.expect("Did not enter a string");
-        //
-        //         // Parse and send command
-        //         match parse_command(input) {
-        //             Ok(command) => {
-        //                 let mut sent_command = false;
-        //                 for port in CLIENT_PORTS.iter() {
-        //                     if let Some(writer) = api.lock().await.get_mut(port) {
-        //                         let cmd = Message::APICommand(command.clone());
-        //                         let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
-        //                         data.push(b'\n');
-        //                         writer.write_all(&data).await.unwrap();
-        //                         sent_command = true;
-        //                         break;
-        //                     }
-        //                 }
-        //                 if !sent_command {
-        //                     println!("Couldn't send command, all nodes are unreachable");
-        //                 }
-        //             }
-        //             Err(err) => println!("{err}"),
-        //         }
-        //         // Wait some amount of time for cluster response
-        //         sleep(Duration::from_millis(500)).await;
-        //     }
-        // });
-
     }
 }
