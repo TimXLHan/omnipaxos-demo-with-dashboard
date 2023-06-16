@@ -125,7 +125,7 @@ impl UserInputListener {
                 } => {
                     let mut ui_app = self.ui_app.lock().await;
                     let log = ui_app.input_area.lines()[0].clone();
-                    let out = self.cli_handler.handle_user_input(log);
+                    let out = self.cli_handler.handle_user_input(log).await;
                     if !out.is_empty() {
                         ui_app.append_log(out);
                     }
