@@ -42,10 +42,12 @@ pub mod ui {
     #[derive(Debug, Clone)]
     pub enum UIMessage {
         Initialize, // Launch to initialize the application
+        UpdateUi,
         OmnipaxosResponse(APIResponse),
         OmnipaxosNetworkUpdate(NetworkState),
         OmnipaxosNodeCrashed(u64),
         ClusterUnreachable,
+        Exit,
     }
 }
 
