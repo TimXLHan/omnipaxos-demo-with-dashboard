@@ -47,9 +47,9 @@ pub struct KeyValue {
 
 #[derive(Debug, Clone)]
 pub struct NetworkState {
-    nodes: Vec<u64>,
-    alive_nodes: Vec<u64>,
-    partitions: HashSet<(u64, u64)>,
+    pub(crate) nodes: Vec<u64>,
+    pub(crate) alive_nodes: Vec<u64>,
+    pub(crate) partitions: HashSet<(u64, u64)>,
 }
 
 pub struct Coordinator {

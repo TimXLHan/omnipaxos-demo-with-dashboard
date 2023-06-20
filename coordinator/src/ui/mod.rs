@@ -58,6 +58,10 @@ impl UI {
                 self.terminal.show_cursor().unwrap();
                 std::process::exit(0);
             }
+            UIMessage::OmnipaxosNetworkUpdate(network_statue) => {
+                self.ui_app.lock().await.network_state = network_statue;
+                self.update_ui().await;
+            }
             _ => println!("not implemented"),
         }
     }
