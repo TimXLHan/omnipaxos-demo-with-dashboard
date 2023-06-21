@@ -12,7 +12,9 @@ pub struct UIApp<'a> {
     logs: Vec<String>,
     pub scroll: i64,
     pub input_area: TextArea<'a>,
-    pub network_state: NetworkState
+    pub network_state: NetworkState,
+    pub throughput_data: Vec<u64>,
+    pub decided_idx: u64,
 }
 
 impl<'a> UIApp<'a> {
@@ -21,7 +23,10 @@ impl<'a> UIApp<'a> {
             nodes: vec![],
             alive_nodes: vec![],
             partitions: Default::default(),
-        } }
+        },
+            throughput_data: vec![],
+            decided_idx: 0,
+        }
     }
 
     pub fn append_log(&mut self, log: String) {

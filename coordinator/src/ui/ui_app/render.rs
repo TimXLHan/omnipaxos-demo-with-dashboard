@@ -13,7 +13,7 @@ use tui_textarea::{Input, TextArea};
 use crate::coordinator::NetworkState;
 
 use crate::ui::ui_app::UIApp;
-use crate::utils::{UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_Throughput_TITLE, UI_TITLE};
+use crate::utils::{UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
 
 /// render ui components
 pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
@@ -45,7 +45,7 @@ pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
     rect.render_widget(title, chunks[0]);
 
     // Sparkline
-    let sparkline = draw_sparkline();
+    let sparkline = draw_sparkline(&app.throughput_data);
     rect.render_widget(sparkline, chunks[1]);
 
     // Output & Status
@@ -214,14 +214,14 @@ fn draw_title<'a>() -> Paragraph<'a> {
         )
 }
 
-fn draw_sparkline<'a>() -> Sparkline<'a> {
+fn draw_sparkline(data: &Vec<u64>) -> Sparkline {
     Sparkline::default()
         .block(
             Block::default()
-                .title(UI_Throughput_TITLE)
+                .title(UI_THROUGHPUT_TITLE)
                 .borders(Borders::ALL),
         )
-        .data(&[1, 2, 5, 3, 4, 1, 2, 5, 3, 4, 1, 2, 5, 3, 4, 1, 2, 5, 3, 4, 1, 2, 5, 3, 4, 1, 2, 5, 3, 4, 5])
+        .data(data)
         .style(Style::default().fg(Color::Green))
 }
 
