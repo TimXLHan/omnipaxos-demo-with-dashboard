@@ -117,23 +117,24 @@ impl Ticker {
     }
 
     pub async fn run(&mut self) {
-        let mut tick = Instant::now();
+        let mut ui_interval = tokio::time::interval(UI_TICK_RATE);
+        // let mut tick = Instant::now();
         let mut last_decided_idx:u64= self.ui_app.lock().await.decided_idx;
         loop {
-            if tick.elapsed() >= UI_TICK_RATE {
-                tick = Instant::now();
-                {
-                    let mut ui_app = self.ui_app.lock().await;
-                    let throughput = (ui_app.decided_idx as f64 - last_decided_idx as f64).max(0.0) as f64 / (UI_TICK_RATE.as_millis() as f64 / 1000.0) as f64;
-                    ui_app.throughput_data.insert(0, throughput as u64);
-                    last_decided_idx = ui_app.decided_idx;
+            tokio::select! {
+                _ = ui_interval.tick() => {
+                    {
+                        let mut ui_app = self.ui_app.lock().await;
+                        let throughput = (ui_app.decided_idx as f64 - last_decided_idx as f64).max(0.0) as f64 / (UI_TICK_RATE.as_millis() as f64 / 1000.0) as f64;
+                        ui_app.throughput_data.insert(0, throughput as u64);
+                        last_decided_idx = ui_app.decided_idx;
+                    }
+                    // temp
+                    // let rng:u64 = StdRng::from_entropy().gen_range(1..=100);
+                    // self.io_sender.send(IOMessage::UIMessage(UIMessage::OmnipaxosResponse(APIResponse::Decided(rng)))).await.unwrap();
+                    // end temp
+                    self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
                 }
-
-                // temp
-                let rng:u64 = StdRng::from_entropy().gen_range(1..=100);
-                self.io_sender.send(IOMessage::UIMessage(UIMessage::OmnipaxosResponse(APIResponse::Decided(rng)))).await.unwrap();
-                // end temp
-                self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
             }
         }
     }

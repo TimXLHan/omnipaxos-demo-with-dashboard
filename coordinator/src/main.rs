@@ -39,7 +39,7 @@ async fn main() {
     io_sender.send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(connection_status))).await.unwrap();
     // EndTemp
 
-    // join!(cd.run(), controller.run());
-    join!(controller.run());
+    join!(cd.run(), controller.run());
+    //join!(controller.run());
 
 }

@@ -200,11 +200,9 @@ impl Coordinator {
     }
 
     pub async fn run(&mut self) {
-        println!("Coordinator running");
         while let Some(m) = self.receiver.recv().await {
             match m {
                 CDMessage::Initialize => {
-                    println!("Coordinator initialized");
                     self.nodes = CLIENT_PORTS.clone();
                     let op_sockets = self.op_sockets.clone();
                     let io_sender = self.io_sender.clone();
