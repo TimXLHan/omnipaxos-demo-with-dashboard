@@ -26,20 +26,7 @@ async fn main() {
     let mut controller = controller::Controller::new(ui, io_receiver, cd_sender);
 
     io_sender.send(IOMessage::UIMessage(UIMessage::Initialize)).await.unwrap();
-
-    // Temp
-    let mut partitions = HashSet::new();
-    partitions.insert((1, 2));
-    partitions.insert((1, 3));
-    let connection_status = NetworkState {
-        nodes: vec![1, 2, 3, 4, 5],
-        alive_nodes: vec![1, 2, 3, 4, 5],
-        partitions,
-    };
-    io_sender.send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(connection_status))).await.unwrap();
-    // EndTemp
-
     join!(cd.run(), controller.run());
-    //join!(controller.run());
+    // join!(controller.run());
 
 }
