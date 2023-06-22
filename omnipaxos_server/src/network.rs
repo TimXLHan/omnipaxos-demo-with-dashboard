@@ -1,7 +1,7 @@
 use omnipaxos::{messages::Message as OPMessage, util::NodeId};
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use std::sync::Arc;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -56,7 +56,10 @@ impl Network {
             println!("peers ={}  peers addr={}", PEERS[i], PEER_ADDRS[i]);
             peer_addrs.insert(PEERS[i], PEER_ADDRS[i].clone());
         }
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
         let api_stream = TcpStream::connect(API_ADDR.clone()).await.unwrap();
+
         let (api_reader, api_writer) = api_stream.into_split();
         let api_socket = Some(api_writer);
         let incoming_msg_buf = Arc::new(Mutex::new(vec![]));

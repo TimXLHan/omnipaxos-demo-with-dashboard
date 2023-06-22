@@ -102,6 +102,10 @@ impl Coordinator {
                 let (socket, _addr) = listener.accept().await.unwrap();
                 let (reader, writer) = socket.into_split();
                 op_sockets.lock().await.insert(*port, writer);
+                sender
+                    .send(IOMessage::CDMessage(CDMessage::OmnipaxosNodeJoined(*port)))
+                    .await
+                    .unwrap();
                 // receiver actor
                 tokio::spawn(async move {
                     let mut reader = BufReader::new(reader);
@@ -115,6 +119,10 @@ impl Coordinator {
                                 .await
                                 .unwrap();
                             op_sockets.lock().await.remove(port);
+                            sender
+                                .send(IOMessage::CDMessage(CDMessage::OmnipaxosNodeCrashed(*port)))
+                                .await
+                                .unwrap();
                             break;
                         }
                         if let Ok(msg) = serde_json::from_slice::<Message>(&data) {
@@ -184,19 +192,28 @@ impl Coordinator {
         }
 
         // the one central actor that sees all messages
-        while let Some((from_port, to_port, msg)) = central_receiver.recv().await {
-            // drop message if network is partitioned between sender and receiver
-            let nodes_are_connected = !partitions.lock().await.contains(&(*from_port, *to_port));
-            if nodes_are_connected {
-                let sender = out_channels.get(to_port).unwrap().clone();
-                if let Err(e) = sender.send(msg) {
-                    println!(
-                        "DEBUG: senderror on out_sender for port {:?}: {:?}",
-                        to_port, e
-                    );
+        tokio::spawn(async move {
+            while let Some((from_port, to_port, msg)) = central_receiver.recv().await {
+                // drop message if network is partitioned between sender and receiver
+                // TODO: TUI can only display undirected connections, so we don't support one way
+                // connect partitions
+                // TODO: translate paritions to port mappings to correctly block messages
+                let connection = match from_port <= to_port {
+                    true => (*from_port, *to_port),
+                    false => (*to_port, *from_port),
                 };
+                let nodes_are_connected = !partitions.lock().await.contains(&connection);
+                if nodes_are_connected {
+                    let sender = out_channels.get(to_port).unwrap().clone();
+                    if let Err(e) = sender.send(msg) {
+                        println!(
+                            "DEBUG: senderror on out_sender for port {:?}: {:?}",
+                            to_port, e
+                        );
+                    };
+                }
             }
-        }
+        });
     }
 
     pub async fn run(&mut self) {
@@ -211,13 +228,6 @@ impl Coordinator {
                         Coordinator::create_omnipaxos_listeners(op_sockets, io_sender),
                         Coordinator::create_network_actor(partitions)
                     );
-                    let cluster = self.create_network_state().await;
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
-                            cluster,
-                        )))
-                        .await
-                        .unwrap();
                 }
                 CDMessage::KVCommand(command) => {
                     let mut sent_command = false;
@@ -228,7 +238,6 @@ impl Coordinator {
                                 serde_json::to_vec(&cmd).expect("could not serialize cmd");
                             data.push(b'\n');
                             writer.write_all(&data).await.unwrap();
-                            println!("send KV command to {port}");
                             sent_command = true;
                             break;
                         }
@@ -241,13 +250,43 @@ impl Coordinator {
                     }
                 }
                 CDMessage::SetConnection(from, to, is_connected) => {
-                    let mut partitions = self.partitions.lock().await;
-                    let networked_updated = match is_connected {
-                        true => partitions.insert((from, to)),
-                        false => partitions.remove(&(from, to)),
-                    };
-                    if networked_updated {
+                    if !self.nodes.contains(&from) {
+                        self.io_sender
+                            .send(IOMessage::UIMessage(UIMessage::NoSuchNode(
+                                from,
+                                self.nodes.clone(),
+                            )))
+                            .await
+                            .unwrap();
+                    } else if !self.nodes.contains(&to) {
+                        self.io_sender
+                            .send(IOMessage::UIMessage(UIMessage::NoSuchNode(
+                                to,
+                                self.nodes.clone(),
+                            )))
+                            .await
+                            .unwrap();
+                    } else {
+                        // TODO: TUI can only display undirected connections, so we don't support one way
+                        // connect partitions
+                        let connection = match from <= to {
+                            true => (from, to),
+                            false => (to, from),
+                        };
+                        {
+                            let mut partitions = self.partitions.lock().await;
+                            match is_connected {
+                                true => partitions.remove(&connection),
+                                false => !partitions.insert(connection),
+                            };
+                        }
                         let cluster = self.create_network_state().await;
+                        // TODO: Remove debug when everything is fixed
+                        let msg = format!("New network state {:?}", cluster);
+                        self.io_sender
+                            .send(IOMessage::UIMessage(UIMessage::Debug(msg)))
+                            .await
+                            .unwrap();
                         self.io_sender
                             .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
                                 cluster,
@@ -255,6 +294,24 @@ impl Coordinator {
                             .await
                             .unwrap();
                     }
+                }
+                CDMessage::OmnipaxosNodeCrashed(_port) => {
+                    let cluster = self.create_network_state().await;
+                    self.io_sender
+                        .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
+                            cluster,
+                        )))
+                        .await
+                        .unwrap();
+                }
+                CDMessage::OmnipaxosNodeJoined(_port) => {
+                    let cluster = self.create_network_state().await;
+                    self.io_sender
+                        .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
+                            cluster,
+                        )))
+                        .await
+                        .unwrap();
                 }
             }
         }

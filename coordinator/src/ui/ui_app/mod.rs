@@ -1,10 +1,10 @@
+use crate::coordinator::NetworkState;
 use crate::messages::IOMessage;
 use tokio::sync::mpsc::Sender;
 use tui_textarea::TextArea;
-use crate::coordinator::NetworkState;
 
-pub mod render;
 pub mod cli;
+pub mod render;
 
 /// The ui application, containing the ui state
 pub struct UIApp<'a> {
@@ -19,11 +19,16 @@ pub struct UIApp<'a> {
 
 impl<'a> UIApp<'a> {
     pub(crate) fn new(io_sender: Sender<IOMessage>) -> Self {
-        Self { io_sender, input_area: TextArea::default(), logs: vec![], scroll: 0, network_state: NetworkState {
-            nodes: vec![],
-            alive_nodes: vec![],
-            partitions: Default::default(),
-        },
+        Self {
+            io_sender,
+            input_area: TextArea::default(),
+            logs: vec![],
+            scroll: 0,
+            network_state: NetworkState {
+                nodes: vec![],
+                alive_nodes: vec![],
+                partitions: Default::default(),
+            },
             throughput_data: vec![],
             decided_idx: 0,
         }

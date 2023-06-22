@@ -1,23 +1,17 @@
+use crossterm::event::read;
+use crossterm::event::DisableMouseCapture;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
+use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
-use rand::{Rng, SeedableRng};
-use ratatui::backend::Backend;
-use ratatui::backend::CrosstermBackend;
-use ratatui::{Frame, Terminal};
-use crossterm::event::{Event, read};
 use tui_textarea::{Input, Key};
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 
 use std::io::stdout;
 use std::sync::Arc;
-use std::time::Instant;
-use rand::rngs::StdRng;
 
-use crate::messages::{IOMessage, ui::UIMessage};
 use crate::messages::coordinator::APIResponse;
+use crate::messages::{ui::UIMessage, IOMessage};
 use crate::ui::ui_app::cli::CLIHandler;
 use crate::ui::ui_app::render::render;
 use crate::ui::ui_app::UIApp;
@@ -37,7 +31,7 @@ impl UI {
         let stdout = stdout();
         enable_raw_mode().unwrap();
         let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend).unwrap();
+        let terminal = Terminal::new(backend).unwrap();
         Self {
             io_sender: io_sender.clone(),
             ui_app: Arc::new(Mutex::new(UIApp::new(io_sender))),
@@ -59,7 +53,8 @@ impl UI {
                     self.terminal.backend_mut(),
                     LeaveAlternateScreen,
                     DisableMouseCapture
-                ).unwrap();
+                )
+                .unwrap();
                 self.terminal.clear().unwrap();
                 self.terminal.show_cursor().unwrap();
                 std::process::exit(0);
@@ -68,15 +63,43 @@ impl UI {
                 self.ui_app.lock().await.network_state = network_statue;
                 self.update_ui().await;
             }
-            UIMessage::OmnipaxosResponse(response) => {
-                match response {
-                    APIResponse::Decided(idx) => {
-                        self.ui_app.lock().await.decided_idx = idx;
-                    }
-                    _ => {}
+            UIMessage::OmnipaxosResponse(response) => match response {
+                APIResponse::Decided(idx) => {
+                    self.ui_app.lock().await.decided_idx = idx;
                 }
+                APIResponse::Read(key, value) => {
+                    self.ui_app
+                        .lock()
+                        .await
+                        .append_log(format!("The key: {key} has value: {:?}", value));
+                    self.update_ui().await;
+                }
+            },
+            UIMessage::OmnipaxosNodeCrashed(id) => {
+                self.ui_app
+                    .lock()
+                    .await
+                    .append_log(format!("Lost connection to node {id}"));
+                self.update_ui().await;
             }
-            _ => println!("not implemented"),
+            UIMessage::ClusterUnreachable => {
+                self.ui_app
+                    .lock()
+                    .await
+                    .append_log(format!("Couldn't reach cluster"));
+                self.update_ui().await;
+            }
+            UIMessage::NoSuchNode(invalid_node_id, valid_node_ids) => {
+                self.ui_app.lock().await.append_log(format!(
+                    "Node {invalid_node_id} doesn't exists. Valid nodes are: {:?}",
+                    valid_node_ids
+                ));
+                self.update_ui().await;
+            }
+            UIMessage::Debug(string) => {
+                self.ui_app.lock().await.append_log(string);
+                self.update_ui().await;
+            }
         }
     }
 
@@ -96,14 +119,20 @@ impl UI {
             let mut ticker = Ticker::new(io_sender, ui_app);
             ticker.run().await;
         });
-        self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
+        self.io_sender
+            .send(IOMessage::UIMessage(UIMessage::UpdateUi))
+            .await
+            .unwrap();
     }
 
+    // TODO: Split this into multiple functions so we can specify to update only part of the UI. This
+    // will save on resources and I think help with canvas color flickering.
+    // See: https://stackoverflow.com/questions/71065741/tui-rs-flickering-when-drawing-multiple-widgets
+    // Example: update_network_widget(), update_input_widget(), update output_widget(), etc.
     async fn update_ui(&mut self) {
         let ui_app = self.ui_app.lock().await;
         self.terminal.draw(|rect| render(rect, &ui_app)).unwrap();
     }
-
 }
 
 struct Ticker {
@@ -118,8 +147,7 @@ impl Ticker {
 
     pub async fn run(&mut self) {
         let mut ui_interval = tokio::time::interval(UI_TICK_RATE);
-        // let mut tick = Instant::now();
-        let mut last_decided_idx:u64= self.ui_app.lock().await.decided_idx;
+        let mut last_decided_idx: u64 = self.ui_app.lock().await.decided_idx;
         loop {
             tokio::select! {
                 _ = ui_interval.tick() => {
@@ -129,16 +157,11 @@ impl Ticker {
                         ui_app.throughput_data.insert(0, throughput as u64);
                         last_decided_idx = ui_app.decided_idx;
                     }
-                    // temp
-                    // let rng:u64 = StdRng::from_entropy().gen_range(1..=100);
-                    // self.io_sender.send(IOMessage::UIMessage(UIMessage::OmnipaxosResponse(APIResponse::Decided(rng)))).await.unwrap();
-                    // end temp
                     self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
                 }
             }
         }
     }
-
 }
 
 struct UserInputListener {
@@ -157,28 +180,41 @@ impl UserInputListener {
     }
 
     pub async fn run(&mut self) {
+        // TODO: make this non-blocking using crosstern::event::poll
         loop {
             match read().unwrap().into() {
                 Input { key: Key::Esc, .. } => {
-                    self.io_sender.send(IOMessage::UIMessage(UIMessage::Exit)).await.unwrap();
+                    self.io_sender
+                        .send(IOMessage::UIMessage(UIMessage::Exit))
+                        .await
+                        .unwrap();
                     break;
                 }
                 Input { key: Key::Up, .. } => {
                     self.ui_app.lock().await.scroll -= 1;
-                    self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
+                    self.io_sender
+                        .send(IOMessage::UIMessage(UIMessage::UpdateUi))
+                        .await
+                        .unwrap();
                 }
                 Input { key: Key::Down, .. } => {
                     let mut ui_app = self.ui_app.lock().await;
                     let scroll = ui_app.scroll;
                     ui_app.scroll = (scroll + 1).min(0);
-                    self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
+                    self.io_sender
+                        .send(IOMessage::UIMessage(UIMessage::UpdateUi))
+                        .await
+                        .unwrap();
                 }
                 Input {
                     key: Key::Char('c'),
                     ctrl: true,
                     ..
                 } => {
-                    self.io_sender.send(IOMessage::UIMessage(UIMessage::Exit)).await.unwrap();
+                    self.io_sender
+                        .send(IOMessage::UIMessage(UIMessage::Exit))
+                        .await
+                        .unwrap();
                     break;
                 }
                 Input {
@@ -192,11 +228,17 @@ impl UserInputListener {
                     }
                     ui_app.input_area.delete_line_by_head();
                     ui_app.input_area.delete_line_by_end();
-                    self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
+                    self.io_sender
+                        .send(IOMessage::UIMessage(UIMessage::UpdateUi))
+                        .await
+                        .unwrap();
                 }
                 input => {
                     self.ui_app.lock().await.input_area.input(input);
-                    self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
+                    self.io_sender
+                        .send(IOMessage::UIMessage(UIMessage::UpdateUi))
+                        .await
+                        .unwrap();
                 }
             }
         }

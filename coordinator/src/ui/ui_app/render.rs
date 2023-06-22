@@ -1,24 +1,24 @@
-use std::collections::{HashMap, HashSet};
-use std::f64::consts::PI;
-use std::ops::Deref;
+use crate::coordinator::NetworkState;
 use ratatui::backend::Backend;
-use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::symbols::Marker;
 use ratatui::text::{Span, Spans};
-use ratatui::widgets::{Block, Borders, BorderType, Paragraph, Sparkline, Wrap};
 use ratatui::widgets::canvas::{Canvas, Context, Line, Rectangle};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Wrap};
+use ratatui::Frame;
+use std::collections::{HashMap, HashSet};
+use std::f64::consts::PI;
+use std::ops::Deref;
 use tui_textarea::{Input, TextArea};
-use crate::coordinator::NetworkState;
 
 use crate::ui::ui_app::UIApp;
 use crate::utils::{UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
 
 /// render ui components
 pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
-    where
-        B: Backend,
+where
+    B: Backend,
 {
     let size = rect.size();
 
@@ -36,7 +36,7 @@ pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
                 // Input
                 Constraint::Length(3),
             ]
-                .as_ref(),
+            .as_ref(),
         )
         .split(size);
 
@@ -91,7 +91,6 @@ pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
     rect.render_widget(canvas_line_lable, body_chunks[1]);
     rect.render_widget(canvas_node, body_chunks[1]);
 
-
     // Input
     let mut textarea = app.input_area.clone();
     let input = draw_input(textarea);
@@ -111,7 +110,7 @@ struct Label<'a> {
 }
 
 fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
-    let num_of_nodes = network_status.nodes.len();
+    let num_of_nodes = network_status.alive_nodes.len();
     let node_width = 15.0;
     let radius = 50.0; // Radius of the circle
     let center_x = -node_width / 2.0; // X-coordinate of the circle's center
@@ -133,15 +132,15 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
             height: node_width,
             color: Color::Green,
         };
-        nodes_with_rects.insert(network_status.nodes[i], rect);
+        nodes_with_rects.insert(network_status.alive_nodes[i], rect);
     }
 
     // Connections
     let mut lines = HashMap::new();
-    for i in 0..network_status.nodes.len() {
-        for j in i..network_status.nodes.len() {
-            let node1 = network_status.nodes.get(i).unwrap();
-            let node2 = network_status.nodes.get(j).unwrap();
+    for i in 0..network_status.alive_nodes.len() {
+        for j in i..network_status.alive_nodes.len() {
+            let node1 = network_status.alive_nodes.get(i).unwrap();
+            let node2 = network_status.alive_nodes.get(j).unwrap();
             let current_rect = nodes_with_rects.get(node1).unwrap();
             let next_rect = nodes_with_rects.get(node2).unwrap();
 
@@ -165,7 +164,10 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
         let label = Label {
             x: rect.x + rect.width / 4.0,
             y: rect.y + rect.width / 3.0,
-            span: Span::styled(String::from("Node".to_string() + &*node_id.to_string()), Style::default().fg(Color::White)),
+            span: Span::styled(
+                String::from("Node".to_string() + &*node_id.to_string()),
+                Style::default().fg(Color::White),
+            ),
         };
         labels.insert(*node_id, label);
     }
@@ -227,7 +229,11 @@ fn draw_sparkline(data: &Vec<u64>) -> Sparkline {
 
 fn draw_input(mut textarea: TextArea) -> TextArea {
     textarea.set_style(Style::default().fg(Color::LightGreen));
-    textarea.set_block(Block::default().borders(Borders::ALL).title(UI_INPUT_AREA_TITLE));
+    textarea.set_block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(UI_INPUT_AREA_TITLE),
+    );
 
     textarea
 }
@@ -235,17 +241,24 @@ fn draw_input(mut textarea: TextArea) -> TextArea {
 fn draw_output<'a>(app: &UIApp, block_height: i64) -> Paragraph<'a> {
     let logs = app.get_logs();
     let log_len = logs.len();
-    Paragraph::new(logs.into_iter().map(|s| Spans::from(Span::raw(s))).collect::<Vec<_>>())
-        .style(Style::default().fg(Color::LightCyan))
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true })
-        .scroll(((log_len as i64 - block_height + app.scroll).max(0) as u16, 0))
-        .block(
-            Block::default()
-                // .title("Body")
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::White))
-                .border_type(BorderType::Plain)
-                .title(UI_OUTPUT_AREA_TITLE),
-        )
+    Paragraph::new(
+        logs.into_iter()
+            .map(|s| Spans::from(Span::raw(s)))
+            .collect::<Vec<_>>(),
+    )
+    .style(Style::default().fg(Color::LightCyan))
+    .alignment(Alignment::Left)
+    .wrap(Wrap { trim: true })
+    .scroll((
+        (log_len as i64 - block_height + app.scroll).max(0) as u16,
+        0,
+    ))
+    .block(
+        Block::default()
+            // .title("Body")
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::White))
+            .border_type(BorderType::Plain)
+            .title(UI_OUTPUT_AREA_TITLE),
+    )
 }

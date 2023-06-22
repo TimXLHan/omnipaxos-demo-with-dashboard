@@ -10,6 +10,8 @@ pub mod coordinator {
         Initialize, // Launch to initialize the application
         KVCommand(KVCommand),
         SetConnection(u64, u64, bool),
+        OmnipaxosNodeCrashed(u64),
+        OmnipaxosNodeJoined(u64),
     }
 
     /// Same as in KV demo
@@ -35,9 +37,8 @@ pub mod coordinator {
 }
 
 pub mod ui {
-    use crate::coordinator::NetworkState;
-
     use super::coordinator::APIResponse;
+    use crate::coordinator::NetworkState;
 
     #[derive(Debug, Clone)]
     pub enum UIMessage {
@@ -47,6 +48,8 @@ pub mod ui {
         OmnipaxosNetworkUpdate(NetworkState),
         OmnipaxosNodeCrashed(u64),
         ClusterUnreachable,
+        NoSuchNode(u64, Vec<u64>),
+        Debug(String),
         Exit,
     }
 }

@@ -1,6 +1,6 @@
 use crate::messages::coordinator::CDMessage;
-use crate::ui::UI;
 use crate::messages::IOMessage;
+use crate::ui::UI;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 pub struct Controller {
@@ -24,18 +24,12 @@ impl Controller {
                 self.cd_sender.send(cd_m).await.unwrap();
             }
             IOMessage::UIMessage(ui_m) => {
-                // println!("{:?}", ui_m);
                 self.ui.handle(ui_m).await;
             }
         }
     }
 
     pub async fn run(&mut self) {
-        self.cd_sender
-            .send(CDMessage::Initialize)
-            .await
-            .expect("Couldn't start Coordinator");
-
         while let Some(m) = self.io_receiver.recv().await {
             self.handle(m).await;
         }
