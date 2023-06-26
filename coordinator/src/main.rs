@@ -1,9 +1,5 @@
-use crate::coordinator::NetworkState;
-use std::collections::HashSet;
-use std::time::Duration;
 use tokio::join;
 use tokio::sync::mpsc;
-use tokio::time::{sleep, Sleep};
 
 use crate::messages::{coordinator::CDMessage, ui::UIMessage, IOMessage};
 use crate::utils::*;
@@ -24,9 +20,9 @@ async fn main() {
         default_panic(info);
         std::process::exit(1);
     }));
-    let (io_sender, mut io_receiver) = mpsc::channel::<IOMessage>(CHANNEL_BUFFER_SIZE);
+    let (io_sender, io_receiver) = mpsc::channel::<IOMessage>(CHANNEL_BUFFER_SIZE);
     let (cd_sender, cd_receiver) = mpsc::channel::<CDMessage>(CHANNEL_BUFFER_SIZE);
-    let mut ui = ui::UI::new(io_sender.clone());
+    let ui = ui::UI::new(io_sender.clone());
     let mut cd = coordinator::Coordinator::new(cd_receiver, io_sender.clone());
     let mut controller = controller::Controller::new(ui, io_receiver, cd_sender);
 
@@ -39,19 +35,5 @@ async fn main() {
         .await
         .unwrap();
 
-    // Temp
-    // let mut partitions = HashSet::new();
-    // partitions.insert((1, 2));
-    // partitions.insert((1, 3));
-    // let connection_status = NetworkState {
-    //     nodes: vec![1, 2, 3, 4, 5],
-    //     alive_nodes: vec![1, 2, 3, 4, 5],
-    //     partitions,
-    // };
-    // io_sender.send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(connection_status))).await.unwrap();
-    // EndTemp
-
-    //cd.run().await;
     join!(cd.run(), controller.run());
-    //join!(controller.run());
 }

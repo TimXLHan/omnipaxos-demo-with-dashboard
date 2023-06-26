@@ -1,10 +1,12 @@
-use crate::messages::coordinator::{CDMessage, Message};
+use crate::messages::coordinator::{CDMessage, KVCommand, Message};
 use crate::messages::ui::UIMessage;
 use crate::messages::IOMessage;
+use rand::random;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashSet;
 use std::env;
+use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 use tokio::join;
 use tokio::net::tcp::OwnedWriteHalf;
@@ -34,6 +36,20 @@ lazy_static! {
     /// Ports on which the nodes are supposed to connect with their client API socket.
     pub static ref CLIENT_PORTS: Vec<u64> = if let Ok(var) = env::var("CLIENT_PORTS") {
         serde_json::from_str(&var).expect("wrong config format")
+    } else {
+        panic!("missing config")
+    };
+    /// Mapping between PORT_MAPPING keys and CLIENT_PORTS
+    pub static ref CLIENT_MAPPINGS: HashMap<u64, u64> = if let Ok(var) = env::var("CLIENT_MAPPINGS") {
+        let mut map = HashMap::new();
+        let x: Vec<Vec<u64>> = serde_json::from_str(&var).expect("wrong config format");
+        for mapping in x {
+            if mapping.len() != 2 {
+                panic!("wrong config format");
+            }
+            map.insert(mapping[0], mapping[1]);
+        }
+        map
     } else {
         panic!("missing config")
     };
@@ -197,10 +213,12 @@ impl Coordinator {
                 // drop message if network is partitioned between sender and receiver
                 // TODO: TUI can only display undirected connections, so we don't support one way
                 // connect partitions
-                // TODO: translate paritions to port mappings to correctly block messages
-                let connection = match from_port <= to_port {
-                    true => (*from_port, *to_port),
-                    false => (*to_port, *from_port),
+                let connection = match (
+                    CLIENT_MAPPINGS.get(from_port).unwrap(),
+                    CLIENT_MAPPINGS.get(to_port).unwrap(),
+                ) {
+                    (from, to) if from <= to => (*from, *to),
+                    (from, to) => (*to, *from),
                 };
                 let nodes_are_connected = !partitions.lock().await.contains(&connection);
                 if nodes_are_connected {
@@ -211,6 +229,32 @@ impl Coordinator {
                             to_port, e
                         );
                     };
+                }
+            }
+        });
+    }
+
+    async fn create_background_proposals(
+        mut num_proposals: u64,
+        op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
+    ) {
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                for port in CLIENT_PORTS.iter() {
+                    if let Some(writer) = op_sockets.lock().await.get_mut(port) {
+                        let cmd = Message::APICommand(KVCommand::Put(KeyValue {
+                            key: random::<u64>().to_string(),
+                            value: random::<u64>().to_string(),
+                        }));
+                        let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
+                        data.push(b'\n');
+                        writer.write_all(&data).await.unwrap();
+                    }
+                }
+                num_proposals -= 1;
+                if num_proposals == 0 {
+                    break;
                 }
             }
         });
@@ -308,7 +352,8 @@ impl Coordinator {
                         .unwrap();
                 }
                 CDMessage::StartBatchingPropose(num) => {
-                    // TODO: Implement batching propose
+                    let op_sockets = self.op_sockets.clone();
+                    Coordinator::create_background_proposals(num, op_sockets).await;
                 }
             }
         }

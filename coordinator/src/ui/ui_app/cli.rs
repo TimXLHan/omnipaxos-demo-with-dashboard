@@ -40,7 +40,7 @@ impl fmt::Display for ParseCommandError {
 fn parse_command(line: String) -> Result<IOMessage, ParseCommandError> {
     let mut words = line.trim().split(" ");
     let command_type = words.next().ok_or(ParseCommandError(
-        "Invalid command: valid commands are put/get/delete/connection".to_string(),
+        "Invalid command: valid commands are put/get/delete/connection/batch".to_string(),
     ))?;
 
     let command = match command_type {
@@ -110,10 +110,20 @@ fn parse_command(line: String) -> Result<IOMessage, ParseCommandError> {
                 })?;
             IOMessage::CDMessage(CDMessage::SetConnection(from, to, connection_status))
         }
-        // TODO: handel batching proposal command in the CLI
-        // "batching" => {
-        //
-        // }
+        "batch" => {
+            let num_proposals = words
+                .next()
+                .ok_or(ParseCommandError(
+                    "Invalid command, format is: batch <number-of-proposals>".to_string(),
+                ))?
+                .parse::<u64>()
+                .map_err(|_| {
+                    ParseCommandError(
+                        "Invalid command: first batch argument must be a number".to_string(),
+                    )
+                })?;
+            IOMessage::CDMessage(CDMessage::StartBatchingPropose(num_proposals))
+        }
         _ => Err(ParseCommandError(
             "Invalid command: valid commands are put/get/delete/connection".to_string(),
         ))?,

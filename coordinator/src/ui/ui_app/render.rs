@@ -7,10 +7,9 @@ use ratatui::text::{Span, Spans};
 use ratatui::widgets::canvas::{Canvas, Context, Line, Rectangle};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Wrap};
 use ratatui::Frame;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::f64::consts::PI;
-use std::ops::Deref;
-use tui_textarea::{Input, TextArea};
+use tui_textarea::TextArea;
 
 use crate::ui::ui_app::UIApp;
 use crate::utils::{UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
