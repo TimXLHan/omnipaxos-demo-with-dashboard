@@ -1,4 +1,5 @@
-use crossterm::event::read;
+use crossterm::event::{poll, read};
+use crossterm::Result;
 use crossterm::event::DisableMouseCapture;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen};
 use ratatui::backend::CrosstermBackend;
@@ -9,6 +10,7 @@ use tui_textarea::{Input, Key};
 
 use std::io::stdout;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::messages::coordinator::APIResponse;
 use crate::messages::{ui::UIMessage, IOMessage};
@@ -59,7 +61,11 @@ impl UI {
                 self.terminal.show_cursor().unwrap();
                 std::process::exit(0);
             }
-            UIMessage::OmnipaxosNetworkUpdate(network_statue) => {
+            UIMessage::OmnipaxosNetworkUpdate(mut network_statue) => {
+                network_statue.nodes.sort();
+                network_statue.alive_nodes.sort();
+                let msg = format!("New network state {:?}", network_statue);
+                self.io_sender.send(IOMessage::UIMessage(UIMessage::Debug(msg))).await.unwrap();
                 self.ui_app.lock().await.network_state = network_statue;
                 self.update_ui().await;
             }
@@ -170,6 +176,10 @@ struct UserInputListener {
     cli_handler: CLIHandler,
 }
 
+fn is_event_available() -> Result<bool> {
+    poll(UI_TICK_RATE)
+}
+
 impl UserInputListener {
     pub fn new(ui_app: Arc<Mutex<UIApp<'static>>>, io_sender: Sender<IOMessage>) -> Self {
         Self {
@@ -180,66 +190,72 @@ impl UserInputListener {
     }
 
     pub async fn run(&mut self) {
-        // TODO: make this non-blocking using crosstern::event::poll
         loop {
-            match read().unwrap().into() {
-                Input { key: Key::Esc, .. } => {
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::Exit))
-                        .await
-                        .unwrap();
-                    break;
-                }
-                Input { key: Key::Up, .. } => {
-                    self.ui_app.lock().await.scroll -= 1;
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::UpdateUi))
-                        .await
-                        .unwrap();
-                }
-                Input { key: Key::Down, .. } => {
-                    let mut ui_app = self.ui_app.lock().await;
-                    let scroll = ui_app.scroll;
-                    ui_app.scroll = (scroll + 1).min(0);
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::UpdateUi))
-                        .await
-                        .unwrap();
-                }
-                Input {
-                    key: Key::Char('c'),
-                    ctrl: true,
-                    ..
-                } => {
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::Exit))
-                        .await
-                        .unwrap();
-                    break;
-                }
-                Input {
-                    key: Key::Enter, ..
-                } => {
-                    let mut ui_app = self.ui_app.lock().await;
-                    let log = ui_app.input_area.lines()[0].clone();
-                    let out = self.cli_handler.handle_user_input(log).await;
-                    if !out.is_empty() {
-                        ui_app.append_log(out);
+            match is_event_available() {
+                Ok(res) => {
+                    if res {
+                        match read().unwrap().into() {
+                            Input { key: Key::Esc, .. } => {
+                                self.io_sender
+                                    .send(IOMessage::UIMessage(UIMessage::Exit))
+                                    .await
+                                    .unwrap();
+                                break;
+                            }
+                            Input { key: Key::Up, .. } => {
+                                self.ui_app.lock().await.scroll -= 1;
+                                self.io_sender
+                                    .send(IOMessage::UIMessage(UIMessage::UpdateUi))
+                                    .await
+                                    .unwrap();
+                            }
+                            Input { key: Key::Down, .. } => {
+                                let mut ui_app = self.ui_app.lock().await;
+                                let scroll = ui_app.scroll;
+                                ui_app.scroll = (scroll + 1).min(0);
+                                self.io_sender
+                                    .send(IOMessage::UIMessage(UIMessage::UpdateUi))
+                                    .await
+                                    .unwrap();
+                            }
+                            Input {
+                                key: Key::Char('c'),
+                                ctrl: true,
+                                ..
+                            } => {
+                                self.io_sender
+                                    .send(IOMessage::UIMessage(UIMessage::Exit))
+                                    .await
+                                    .unwrap();
+                                break;
+                            }
+                            Input {
+                                key: Key::Enter, ..
+                            } => {
+                                let mut ui_app = self.ui_app.lock().await;
+                                let log = ui_app.input_area.lines()[0].clone();
+                                let out = self.cli_handler.handle_user_input(log).await;
+                                if !out.is_empty() {
+                                    ui_app.append_log(out);
+                                }
+                                ui_app.input_area.delete_line_by_head();
+                                ui_app.input_area.delete_line_by_end();
+                                self.io_sender
+                                    .send(IOMessage::UIMessage(UIMessage::UpdateUi))
+                                    .await
+                                    .unwrap();
+                            }
+                            input => {
+                                self.ui_app.lock().await.input_area.input(input);
+                                self.io_sender
+                                    .send(IOMessage::UIMessage(UIMessage::UpdateUi))
+                                    .await
+                                    .unwrap();
+                            }
+                        }
                     }
-                    ui_app.input_area.delete_line_by_head();
-                    ui_app.input_area.delete_line_by_end();
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::UpdateUi))
-                        .await
-                        .unwrap();
                 }
-                input => {
-                    self.ui_app.lock().await.input_area.input(input);
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::UpdateUi))
-                        .await
-                        .unwrap();
-                }
+                Err(_) => {}
             }
         }
     }

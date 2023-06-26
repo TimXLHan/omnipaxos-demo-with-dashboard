@@ -281,12 +281,6 @@ impl Coordinator {
                             };
                         }
                         let cluster = self.create_network_state().await;
-                        // TODO: Remove debug when everything is fixed
-                        let msg = format!("New network state {:?}", cluster);
-                        self.io_sender
-                            .send(IOMessage::UIMessage(UIMessage::Debug(msg)))
-                            .await
-                            .unwrap();
                         self.io_sender
                             .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
                                 cluster,
@@ -312,6 +306,9 @@ impl Coordinator {
                         )))
                         .await
                         .unwrap();
+                }
+                CDMessage::StartBatchingPropose(num) => {
+                    // TODO: Implement batching propose
                 }
             }
         }

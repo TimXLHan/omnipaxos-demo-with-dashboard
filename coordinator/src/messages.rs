@@ -7,6 +7,7 @@ pub mod coordinator {
 
     #[derive(Debug, Clone)]
     pub enum CDMessage {
+        StartBatchingPropose(u64),
         Initialize, // Launch to initialize the application
         KVCommand(KVCommand),
         SetConnection(u64, u64, bool),

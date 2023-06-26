@@ -110,8 +110,12 @@ fn parse_command(line: String) -> Result<IOMessage, ParseCommandError> {
                 })?;
             IOMessage::CDMessage(CDMessage::SetConnection(from, to, connection_status))
         }
+        // TODO: handel batching proposal command in the CLI
+        // "batching" => {
+        //
+        // }
         _ => Err(ParseCommandError(
-            "Invalid command: valid commands are put/get/delete".to_string(),
+            "Invalid command: valid commands are put/get/delete/connection".to_string(),
         ))?,
     };
     Ok(command)
