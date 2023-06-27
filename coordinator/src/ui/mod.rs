@@ -80,6 +80,8 @@ impl UI {
                         .append_log(format!("The key: {key} has value: {:?}", value));
                     self.update_ui().await;
                 }
+                // Ignore this case. Will get notified in OmniPaxosNetworkUpdate instead
+                APIResponse::Leader(_) => (),
             },
             UIMessage::OmnipaxosNodeCrashed(id) => {
                 self.ui_app

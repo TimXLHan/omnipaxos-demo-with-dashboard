@@ -13,6 +13,8 @@ pub mod coordinator {
         SetConnection(u64, u64, bool),
         OmnipaxosNodeCrashed(u64),
         OmnipaxosNodeJoined(u64),
+        // (pid_of_reporting_node, pid_of_their_leader)
+        NewLeader(u64, u64),
     }
 
     /// Same as in KV demo
@@ -28,6 +30,7 @@ pub mod coordinator {
     pub enum APIResponse {
         Decided(u64),
         Read(String, Option<String>),
+        Leader(u64),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

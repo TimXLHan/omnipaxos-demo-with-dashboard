@@ -28,6 +28,7 @@ impl<'a> UIApp<'a> {
                 nodes: vec![],
                 alive_nodes: vec![],
                 partitions: Default::default(),
+                leaders: Default::default(),
             },
             throughput_data: vec![],
             decided_idx: 0,
