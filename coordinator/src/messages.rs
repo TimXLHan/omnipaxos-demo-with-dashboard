@@ -13,8 +13,8 @@ pub mod coordinator {
         SetConnection(u64, u64, bool),
         OmnipaxosNodeCrashed(u64),
         OmnipaxosNodeJoined(u64),
-        // (pid_of_reporting_node, pid_of_their_leader)
-        NewLeader(u64, u64),
+        // (pid_of_reporting_node, the ballot they are currently following)
+        NewRound(u64, Option<Round>),
     }
 
     /// Same as in KV demo
@@ -25,12 +25,18 @@ pub mod coordinator {
         Get(String),
     }
 
+    #[derive(Clone, Copy, Eq, Debug, Ord, PartialOrd, PartialEq, Serialize, Deserialize)]
+    pub struct Round {
+        pub round_num: u32,
+        pub leader: u64,
+    }
+
     /// Same as in KV demo
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum APIResponse {
         Decided(u64),
         Read(String, Option<String>),
-        Leader(u64),
+        NewRound(Option<Round>),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

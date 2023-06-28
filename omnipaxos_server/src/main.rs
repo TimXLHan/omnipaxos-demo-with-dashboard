@@ -56,21 +56,23 @@ async fn main() {
     let cluster_config = ClusterConfig {
         configuration_id: 1,
         // TODO: get nodes from env variable
-        nodes: vec![1,2,3],
+        nodes: vec![1, 2, 3],
         ..Default::default()
     };
     let op_config = OmniPaxosConfig {
         server_config,
         cluster_config,
     };
-    let omni_paxos: Arc<Mutex<OmniPaxosKV>> =
-        Arc::new(Mutex::new(op_config.build(MemoryStorage::default()).unwrap()));
+    let omni_paxos: Arc<Mutex<OmniPaxosKV>> = Arc::new(Mutex::new(
+        op_config.build(MemoryStorage::default()).unwrap(),
+    ));
     let mut op_server = OmniPaxosServer {
         network: network::Network::new().await,
         omni_paxos: Arc::clone(&omni_paxos),
         peers: PEERS.clone(),
         pid: *PID,
         last_sent_decided_idx: 0,
+        last_sent_leader: None,
         database: database::Database::new(format!("db_{}", *PID).as_str()),
     };
     op_server.run().await;

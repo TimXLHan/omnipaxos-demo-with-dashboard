@@ -1,4 +1,5 @@
 use crate::coordinator::NetworkState;
+use crate::messages::coordinator::Round;
 use ratatui::backend::Backend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Color, Style};
@@ -7,7 +8,7 @@ use ratatui::text::{Span, Spans};
 use ratatui::widgets::canvas::{Canvas, Context, Line, Rectangle};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Wrap};
 use ratatui::Frame;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::f64::consts::PI;
 use tui_textarea::TextArea;
 
@@ -123,15 +124,20 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
         let angle = i as f64 * angle_step;
         let x = center_x + radius * angle.cos();
         let y = center_y + radius * angle.sin();
+        let node_id = network_status.alive_nodes[i];
+        let color = match network_status.max_round {
+            Some(Round { leader: l,.. }) if node_id == l => Color::Yellow,
+            _ => Color::Green,
+        };
         // let rect = Rectangle::new(Point::new(x, y), 1.0, 1.0); // Adjust the width and height as desired
         let rect = Rectangle {
             x,
             y,
             width: node_width,
             height: node_width,
-            color: Color::Green,
+            color,
         };
-        nodes_with_rects.insert(network_status.alive_nodes[i], rect);
+        nodes_with_rects.insert(node_id, rect);
     }
 
     // Connections

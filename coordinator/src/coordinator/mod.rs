@@ -1,4 +1,4 @@
-use crate::messages::coordinator::{APIResponse, CDMessage, KVCommand, Message};
+use crate::messages::coordinator::{APIResponse, CDMessage, KVCommand, Message, Round};
 use crate::messages::ui::UIMessage;
 use crate::messages::IOMessage;
 use rand::random;
@@ -61,12 +61,12 @@ pub struct KeyValue {
     pub value: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NetworkState {
     pub(crate) nodes: Vec<u64>,
     pub(crate) alive_nodes: Vec<u64>,
     pub(crate) partitions: HashSet<(u64, u64)>,
-    pub(crate) leaders: HashSet<u64>,
+    pub(crate) max_round: Option<Round>,
 }
 
 pub struct Coordinator {
@@ -75,7 +75,7 @@ pub struct Coordinator {
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
     partitions: Arc<Mutex<HashSet<(u64, u64)>>>,
     nodes: Vec<u64>,
-    leaders: Vec<Option<u64>>,
+    max_round: Option<Round>,
 }
 
 impl Coordinator {
@@ -86,7 +86,7 @@ impl Coordinator {
             op_sockets: Arc::new(Mutex::new(HashMap::new())),
             partitions: Arc::new(Mutex::new(HashSet::new())),
             nodes: vec![],
-            leaders: vec![],
+            max_round: None,
         }
     }
 
@@ -101,7 +101,7 @@ impl Coordinator {
                 .map(|&key| key)
                 .collect(),
             partitions: self.partitions.lock().await.clone(),
-            leaders: self.leaders.iter().filter_map(|o| *o).collect(),
+            max_round: self.max_round,
         }
     }
 
@@ -124,7 +124,9 @@ impl Coordinator {
                 let client_pid = *PORT_TO_PID_MAPPING.get(port).unwrap();
                 op_sockets.lock().await.insert(client_pid, writer);
                 sender
-                    .send(IOMessage::CDMessage(CDMessage::OmnipaxosNodeJoined(client_pid)))
+                    .send(IOMessage::CDMessage(CDMessage::OmnipaxosNodeJoined(
+                        client_pid,
+                    )))
                     .await
                     .unwrap();
                 // receiver actor
@@ -136,12 +138,16 @@ impl Coordinator {
                         if bytes_read == 0 {
                             // dropped socket EOF
                             sender
-                                .send(IOMessage::UIMessage(UIMessage::OmnipaxosNodeCrashed(client_pid)))
+                                .send(IOMessage::UIMessage(UIMessage::OmnipaxosNodeCrashed(
+                                    client_pid,
+                                )))
                                 .await
                                 .unwrap();
                             op_sockets.lock().await.remove(&client_pid);
                             sender
-                                .send(IOMessage::CDMessage(CDMessage::OmnipaxosNodeCrashed(client_pid)))
+                                .send(IOMessage::CDMessage(CDMessage::OmnipaxosNodeCrashed(
+                                    client_pid,
+                                )))
                                 .await
                                 .unwrap();
                             break;
@@ -149,10 +155,12 @@ impl Coordinator {
                         if let Ok(msg) = serde_json::from_slice::<Message>(&data) {
                             match msg {
                                 // TODO: Add this message type on client-side
-                                Message::APIResponse(APIResponse::Leader(leader_pid)) => sender
-                                .send(IOMessage::CDMessage(CDMessage::NewLeader(client_pid, leader_pid)))
-                                .await
-                                .unwrap(),
+                                Message::APIResponse(APIResponse::NewRound(round)) => sender
+                                    .send(IOMessage::CDMessage(CDMessage::NewRound(
+                                        client_pid, round,
+                                    )))
+                                    .await
+                                    .unwrap(),
                                 Message::APIResponse(response) => sender
                                     .send(IOMessage::UIMessage(UIMessage::OmnipaxosResponse(
                                         response,
@@ -248,7 +256,10 @@ impl Coordinator {
         mut num_proposals: u64,
         op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
     ) {
-        let clients: Vec<u64> = CLIENT_PORTS.iter().map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap()).collect();
+        let clients: Vec<u64> = CLIENT_PORTS
+            .iter()
+            .map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap())
+            .collect();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -275,7 +286,10 @@ impl Coordinator {
         while let Some(m) = self.receiver.recv().await {
             match m {
                 CDMessage::Initialize => {
-                    self.nodes = CLIENT_PORTS.iter().map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap()).collect();
+                    self.nodes = CLIENT_PORTS
+                        .iter()
+                        .map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap())
+                        .collect();
                     let op_sockets = self.op_sockets.clone();
                     let io_sender = self.io_sender.clone();
                     let partitions = self.partitions.clone();
@@ -287,8 +301,7 @@ impl Coordinator {
                 CDMessage::KVCommand(command) => {
                     if let Some((_, writer)) = self.op_sockets.lock().await.iter_mut().next() {
                         let cmd = Message::APICommand(command);
-                        let mut data =
-                            serde_json::to_vec(&cmd).expect("could not serialize cmd");
+                        let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
                         data.push(b'\n');
                         writer.write_all(&data).await.unwrap();
                     } else {
@@ -331,49 +344,41 @@ impl Coordinator {
                                 false => !partitions.insert(connection),
                             };
                         }
-                        let cluster = self.create_network_state().await;
-                        self.io_sender
-                            .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
-                                cluster,
-                            )))
-                            .await
-                            .unwrap();
+                        self.send_network_update().await;
                     }
                 }
                 CDMessage::OmnipaxosNodeCrashed(_pid) => {
-                    let cluster = self.create_network_state().await;
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
-                            cluster,
-                        )))
-                        .await
-                        .unwrap();
+                    self.send_network_update().await;
                 }
                 CDMessage::OmnipaxosNodeJoined(_pid) => {
-                    let cluster = self.create_network_state().await;
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
-                            cluster,
-                        )))
-                        .await
-                        .unwrap();
+                    self.send_network_update().await;
                 }
                 CDMessage::StartBatchingPropose(num) => {
                     let op_sockets = self.op_sockets.clone();
                     Coordinator::create_background_proposals(num, op_sockets).await;
                 }
-                CDMessage::NewLeader(client_pid, leader_pid) => {
-                    let client_idx = self.nodes.iter().position(|&node_pid| node_pid == client_pid).unwrap();
-                    self.leaders[client_idx] = Some(leader_pid);
-                    let cluster = self.create_network_state().await;
-                    self.io_sender
-                        .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
-                            cluster,
-                        )))
-                        .await
-                        .unwrap();
+                CDMessage::NewRound(_client_pid, new_round) => match (self.max_round, new_round) {
+                    (Some(old_round), Some(round)) if old_round < round => {
+                        self.max_round = Some(round);
+                        self.send_network_update().await;
+                    }
+                    (None, Some(round)) => {
+                        self.max_round = Some(round);
+                        self.send_network_update().await;
+                    }
+                    _ => (),
                 },
             }
         }
+    }
+
+    async fn send_network_update(&self) {
+        let cluster = self.create_network_state().await;
+        self.io_sender
+            .send(IOMessage::UIMessage(UIMessage::OmnipaxosNetworkUpdate(
+                cluster,
+            )))
+            .await
+            .unwrap();
     }
 }

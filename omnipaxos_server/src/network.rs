@@ -1,8 +1,8 @@
 use omnipaxos::{messages::Message as OPMessage, util::NodeId};
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::{collections::HashMap, time::Duration};
 use std::sync::Arc;
+use std::{collections::HashMap, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{tcp, TcpStream},

@@ -24,12 +24,7 @@ impl<'a> UIApp<'a> {
             input_area: TextArea::default(),
             logs: vec![],
             scroll: 0,
-            network_state: NetworkState {
-                nodes: vec![],
-                alive_nodes: vec![],
-                partitions: Default::default(),
-                leaders: Default::default(),
-            },
+            network_state: Default::default(),
             throughput_data: vec![],
             decided_idx: 0,
         }

@@ -5,16 +5,33 @@ use crate::{
     util::{ELECTION_TIMEOUT, OUTGOING_MESSAGE_PERIOD},
     OmniPaxosKV,
 };
+use omnipaxos::ballot_leader_election::Ballot;
 use omnipaxos::util::{LogEntry, NodeId};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use tokio::time;
+
+#[derive(Clone, Copy, Eq, Debug, Ord, PartialOrd, PartialEq, Serialize, Deserialize)]
+pub struct Round {
+    pub round_num: u32,
+    pub leader: u64,
+}
+
+impl From<Ballot> for Round {
+    fn from(ballot: Ballot) -> Self {
+        Self {
+            round_num: ballot.n,
+            leader: ballot.pid,
+        }
+    }
+}
 
 /// Same as in network actor
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum APIResponse {
     Decided(u64),
     Read(String, Option<String>),
+    NewRound(Option<Round>),
 }
 
 pub struct OmniPaxosServer {
@@ -22,6 +39,7 @@ pub struct OmniPaxosServer {
     pub pid: NodeId,
     pub peers: Vec<NodeId>,
     pub last_sent_decided_idx: u64,
+    pub last_sent_leader: Option<Ballot>,
     pub network: Network,
     pub database: Database,
 }
@@ -78,7 +96,7 @@ impl OmniPaxosServer {
                 _ = msg_interval.tick() => {
                     self.process_incoming_msgs().await;
                     self.send_outgoing_msgs().await;
-                    // update the network_actor of latest decided idx
+                    // Notify the network_actor of new decided idx
                     let op = self.omni_paxos.lock().unwrap();
                     let new_decided_idx = op.get_decided_idx();
                     if self.last_sent_decided_idx < new_decided_idx {
@@ -86,6 +104,13 @@ impl OmniPaxosServer {
                         self.handle_decided(decided_entries);
                         self.last_sent_decided_idx = new_decided_idx;
                         let msg = Message::APIResponse(APIResponse::Decided(new_decided_idx));
+                        self.network.send(0, msg).await;
+                    }
+                    // Notify the network_actor of new leader
+                    let new_ballot = op.get_current_leader_ballot();
+                    if self.last_sent_leader != new_ballot {
+                        self.last_sent_leader = new_ballot;
+                        let msg = Message::APIResponse(APIResponse::NewRound(new_ballot.map(|b| b.into())));
                         self.network.send(0, msg).await;
                     }
                 },
