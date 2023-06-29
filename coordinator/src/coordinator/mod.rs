@@ -339,10 +339,7 @@ impl Coordinator {
                         // constantly.
                         // TODO: TUI can only display undirected connections, so we don't support one way
                         // connect partitions
-                        let connection = match from <= to {
-                            true => (from, to),
-                            false => (to, from),
-                        };
+                        let connection = self.get_connection(from, to);
                         {
                             let mut partitions = self.partitions.lock().await;
                             match is_connected {
@@ -384,7 +381,7 @@ impl Coordinator {
                             // Remove connections to everyone but next leader
                             let current_leader = self
                                 .max_round
-                                .expect("Need to have a current leader for scenarios")
+                                .expect("Need to have a current leader for quorum loss scenario")
                                 .leader;
                             let next_leader = *self
                                 .nodes
@@ -394,13 +391,11 @@ impl Coordinator {
                                 .unwrap();
                             let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
                             let mut partitions = self.partitions.lock().await;
+                            partitions.clear();
                             for &from in other_nodes {
                                 for &to in self.nodes.iter() {
                                     if to != next_leader && to != from {
-                                        let connection = match from <= to {
-                                            true => (from, to),
-                                            false => (to, from),
-                                        };
+                                        let connection = self.get_connection(from, to);
                                         partitions.insert(connection);
                                     }
                                 }
@@ -409,31 +404,45 @@ impl Coordinator {
                             self.send_network_update().await;
                         }
                         "constrained" => {
+                            // Disconnect next leader
                             let current_leader = self
                                 .max_round
-                                .expect("Need to have a current leader for scenarios")
+                                .expect("Need to have a current leader for constrained scenario")
                                 .leader;
-                            let other_nodes = self.nodes.iter().filter(|&&n| n != current_leader).take(2);
+                            let next_leader = *self.nodes.iter().filter(|&&n| n != current_leader).next().unwrap();
                             let mut partitions = self.partitions.lock().await;
-                            for &from in other_nodes {
-                                for &to in self.nodes.iter() {
-                                    if to != from {
-                                        let connection = match from <= to {
-                                            true => (from, to),
-                                            false => (to, from),
-                                        };
-                                        partitions.insert(connection);
-                                    }
-                                }   
+                            partitions.clear();
+                            for &to in self.nodes.iter() {
+                                if to != next_leader {
+                                    let connection = self.get_connection(next_leader, to);
+                                    partitions.insert(connection);
+                                }
                             }
                             drop(partitions);
                             self.send_network_update().await;
-                            // self.io_sender.send(IOMessage::CDMessage(CDMessage::StartBatchingPropose(10))).await;
-                            // tokio::spawn({
-                            // });
+                            // Decide some values without next leader
+                            let op_sockets = self.op_sockets.clone();
+                            Coordinator::create_background_proposals(10, op_sockets).await;
+                            tokio::time::sleep(Duration::from_secs(3)).await;
+                            // Set connections to Constrained Scenario with next leader
+                            let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
+                            let mut partitions = self.partitions.lock().await;
+                            partitions.clear();
+                            for &from in other_nodes {
+                                for &to in self.nodes.iter() {
+                                    if to != next_leader && to != from {
+                                        let connection = self.get_connection(from, to);
+                                        partitions.insert(connection);
+                                    }
+                                }
+                            }
+                            partitions.insert(self.get_connection(next_leader, current_leader));
+                            drop(partitions);
+                            self.send_network_update().await;
                         }
                         "chained" => {
                             let mut partitions = self.partitions.lock().await;
+                            partitions.clear();
                             partitions.insert((1, 2));
                             partitions.insert((1, 3));
                             partitions.insert((1, 4));
@@ -464,5 +473,12 @@ impl Coordinator {
             )))
             .await
             .unwrap();
+    }
+
+    fn get_connection(&self, from: u64, to:u64) -> (u64, u64) {
+        match from <= to {
+            true => (from, to),
+            false => (to, from),
+        }
     }
 }
