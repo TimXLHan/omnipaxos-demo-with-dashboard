@@ -149,17 +149,16 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
             let current_rect = nodes_with_rects.get(node1).unwrap();
             let next_rect = nodes_with_rects.get(node2).unwrap();
 
-            let mut line = Line {
-                x1: current_rect.x + current_rect.width / 2.0,
-                y1: current_rect.y + current_rect.height / 2.0,
-                x2: next_rect.x + next_rect.width / 2.0,
-                y2: next_rect.y + next_rect.height / 2.0,
-                color: Color::Green,
-            };
-            if let Some(_) = network_status.partitions.get(&(*node1, *node2)) {
-                line.color = Color::Red;
+            if let None = network_status.partitions.get(&(*node1, *node2)) {
+                let line = Line {
+                    x1: current_rect.x + current_rect.width / 2.0,
+                    y1: current_rect.y + current_rect.height / 2.0,
+                    x2: next_rect.x + next_rect.width / 2.0,
+                    y2: next_rect.y + next_rect.height / 2.0,
+                    color: Color::Green,
+                };
+                lines.insert((i as u64, j as u64), line);
             }
-            lines.insert((i as u64, j as u64), line);
         }
     }
 
