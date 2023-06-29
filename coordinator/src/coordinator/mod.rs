@@ -268,7 +268,7 @@ impl Coordinator {
                 // send to leader instead?
                 for pid in clients.iter() {
                     if let Some(writer) = op_sockets.lock().await.get_mut(&pid) {
-                        let cmd = Message::APICommand(KVCommand::Put(KeyValue {
+                        let cmd = Message::APIRequest(KVCommand::Put(KeyValue {
                             key: random::<u64>().to_string(),
                             value: random::<u64>().to_string(),
                         }));
@@ -306,7 +306,7 @@ impl Coordinator {
                     // connected to the leader, then we won't be able to send any commands. Always
                     // send to leader instead?
                     if let Some((_, writer)) = self.op_sockets.lock().await.iter_mut().next() {
-                        let cmd = Message::APICommand(command);
+                        let cmd = Message::APIRequest(command);
                         let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
                         data.push(b'\n');
                         writer.write_all(&data).await.unwrap();

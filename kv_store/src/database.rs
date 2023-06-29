@@ -1,17 +1,15 @@
 use crate::kv::{KVCommand, KeyValue};
-use omnipaxos::util::SnapshottedEntry;
-use rocksdb::{Options, DB};
+use sled::Db;
 
 pub struct Database {
-    rocks_db: DB,
+    sled: Db,
 }
 
 impl Database {
     pub fn new(path: &str) -> Self {
-        let mut opts = Options::default();
-        opts.create_if_missing(true);
-        let rocks_db = DB::open(&opts, path).unwrap();
-        Self { rocks_db }
+        Self {
+            sled: sled::open(path).unwrap(),
+        }
     }
 
     pub fn handle_command(&self, command: KVCommand) -> Option<String> {
@@ -29,9 +27,9 @@ impl Database {
     }
 
     fn get(&self, key: &str) -> Option<String> {
-        match self.rocks_db.get(key.as_bytes()) {
+        match self.sled.get(key.as_bytes()) {
             Ok(Some(value)) => {
-                let value = String::from_utf8(value).unwrap();
+                let value = String::from_utf8(value.as_ref().into()).unwrap();
                 Some(value)
             }
             Ok(None) => None,
@@ -40,14 +38,14 @@ impl Database {
     }
 
     fn put(&self, key: &str, value: &str) {
-        match self.rocks_db.put(key.as_bytes(), value.as_bytes()) {
+        match self.sled.insert(key, value) {
             Ok(_) => {}
             Err(e) => panic!("failed to put value: {}", e),
         }
     }
 
     fn delete(&self, key: &str) {
-        match self.rocks_db.delete(key.as_bytes()) {
+        match self.sled.remove(key.as_bytes()) {
             Ok(_) => {}
             Err(e) => panic!("failed to delete value: {}", e),
         }
