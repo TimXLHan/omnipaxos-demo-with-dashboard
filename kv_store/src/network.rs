@@ -1,33 +1,41 @@
-use omnipaxos::{messages::Message as OPMessage, util::NodeId};
+use omnipaxos::messages::Message as OPMessage;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::{collections::HashMap, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{tcp, TcpStream},
     sync::Mutex,
 };
 
-use crate::{kv::KVCommand, server::APIResponse, API_ADDR, PEERS, PEER_ADDRS};
+use crate::{kv::KVCommand, server::APIResponse, NODES, PID as MY_PID};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum Message {
     OmniPaxosMsg(OPMessage<KVCommand>),
-    APICommand(KVCommand),
+    APIRequest(KVCommand),
     APIResponse(APIResponse),
 }
 
 pub struct Network {
-    sockets: HashMap<NodeId, tcp::OwnedWriteHalf>,
+    sockets: HashMap<u64, tcp::OwnedWriteHalf>,
     api_socket: Option<tcp::OwnedWriteHalf>,
     incoming_msg_buf: Arc<Mutex<Vec<Message>>>,
 }
 
 impl Network {
+    fn get_my_api_addr() -> String {
+        format!("net:800{}", *MY_PID)
+    }
+
+    fn get_peer_addr(receiver_pid: u64) -> String {
+        format!("net:80{}{}", *MY_PID, receiver_pid)
+    }
+
     /// Sends the message to the receiver.
     /// NodeId 0 is the Client.
-    pub(crate) async fn send(&mut self, receiver: NodeId, msg: Message) {
+    pub(crate) async fn send(&mut self, receiver: u64, msg: Message) {
         let writer = if receiver == 0 {
             self.api_socket.as_mut()
         } else {
@@ -50,15 +58,16 @@ impl Network {
 
     /// Constructs a new Network instance and connects the Sockets.
     pub(crate) async fn new() -> Self {
-        let peers = PEERS.clone();
+        let peers: Vec<u64> = NODES
+            .iter()
+            .filter(|pid| **pid != *MY_PID)
+            .cloned()
+            .collect();
         let mut peer_addrs = HashMap::new();
-        for i in 0..PEERS.len() {
-            peer_addrs.insert(PEERS[i], PEER_ADDRS[i].clone());
+        for pid in &peers {
+            peer_addrs.insert(*pid, Self::get_peer_addr(*pid));
         }
-
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        let api_stream = TcpStream::connect(API_ADDR.clone()).await.unwrap();
-
+        let api_stream = TcpStream::connect(Self::get_my_api_addr()).await.unwrap();
         let (api_reader, api_writer) = api_stream.into_split();
         let api_socket = Some(api_writer);
         let incoming_msg_buf = Arc::new(Mutex::new(vec![]));
@@ -80,12 +89,11 @@ impl Network {
         });
 
         let mut sockets = HashMap::new();
-        for i in 0..peers.len() {
-            let peer = peers[i];
+        for peer in &peers {
             let addr = peer_addrs.get(&peer).unwrap().clone();
             let stream = TcpStream::connect(addr).await.unwrap();
             let (reader, writer) = stream.into_split();
-            sockets.insert(peer, writer);
+            sockets.insert(*peer, writer);
             let msg_buf = incoming_msg_buf.clone();
             tokio::spawn(async move {
                 let mut reader = BufReader::new(reader);

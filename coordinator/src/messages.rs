@@ -35,13 +35,13 @@ pub mod coordinator {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum APIResponse {
         Decided(u64),
-        Read(String, Option<String>),
+        Get(String, Option<String>),
         NewRound(Option<Round>),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub(crate) enum Message {
-        APICommand(KVCommand),
+        APIRequest(KVCommand),
         APIResponse(APIResponse),
     }
 }

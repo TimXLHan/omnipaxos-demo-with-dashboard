@@ -73,7 +73,7 @@ impl UI {
                 APIResponse::Decided(idx) => {
                     self.ui_app.lock().await.decided_idx = idx;
                 }
-                APIResponse::Read(key, value) => {
+                APIResponse::Get(key, value) => {
                     self.ui_app
                         .lock()
                         .await

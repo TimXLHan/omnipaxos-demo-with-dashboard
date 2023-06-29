@@ -1,11 +1,8 @@
 use crate::kv::KVCommand;
-use crate::server::OmniPaxosServer;
-use omnipaxos::{util::{NodeId, FlexibleQuorum}, *};
+use crate::server::Server;
+use omnipaxos::{*, util::FlexibleQuorum};
 use omnipaxos_storage::memory_storage::MemoryStorage;
-use std::{
-    env,
-    sync::{Arc, Mutex},
-};
+use std::env;
 use tokio;
 
 #[macro_use]
@@ -15,25 +12,14 @@ mod database;
 mod kv;
 mod network;
 mod server;
-mod util;
 
 lazy_static! {
-    pub static ref PEERS: Vec<NodeId> = if let Ok(var) = env::var("PEERS") {
+    pub static ref NODES: Vec<u64> = if let Ok(var) = env::var("NODES") {
         serde_json::from_str::<Vec<u64>>(&var).expect("wrong config format")
     } else {
         vec![]
     };
-    pub static ref PEER_ADDRS: Vec<String> = if let Ok(var) = env::var("PEER_ADDRS") {
-        serde_json::from_str::<Vec<String>>(&var).expect("wrong config format")
-    } else {
-        vec![]
-    };
-    pub static ref API_ADDR: String = if let Ok(var) = env::var("API_ADDR") {
-        var
-    } else {
-        panic!("missing API address")
-    };
-    pub static ref PID: NodeId = if let Ok(var) = env::var("PID") {
+    pub static ref PID: u64 = if let Ok(var) = env::var("PID") {
         let x = var.parse().expect("PIDs must be u64");
         if x == 0 {
             panic!("PIDs cannot be 0")
@@ -63,30 +49,27 @@ type OmniPaxosKV = OmniPaxos<KVCommand, MemoryStorage<KVCommand>>;
 async fn main() {
     let server_config = ServerConfig {
         pid: *PID,
+        election_tick_timeout: 5,
         ..Default::default()
     };
-    let mut nodes = PEERS.clone();
-    nodes.push(*PID);
-    nodes.sort();
     let cluster_config = ClusterConfig {
         configuration_id: 1,
-        nodes,
+        nodes: (*NODES).clone(),
         flexible_quorum: FLEX_QUORUM.clone(),
     };
     let op_config = OmniPaxosConfig {
         server_config,
         cluster_config,
     };
-    let omni_paxos: Arc<Mutex<OmniPaxosKV>> = Arc::new(Mutex::new(
-        op_config.build(MemoryStorage::default()).unwrap(),
-    ));
-    let mut op_server = OmniPaxosServer {
+    let omni_paxos = op_config
+        .build(MemoryStorage::default())
+        .expect("failed to build OmniPaxos");
+    let mut server = Server {
+        omni_paxos,
         network: network::Network::new().await,
-        omni_paxos: Arc::clone(&omni_paxos),
-        pid: *PID,
-        last_sent_decided_idx: 0,
-        last_sent_leader: None,
         database: database::Database::new(format!("db_{}", *PID).as_str()),
+        last_decided_idx: 0,
+        last_sent_leader: None,
     };
-    op_server.run().await;
+    server.run().await;
 }
