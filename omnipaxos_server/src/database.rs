@@ -1,4 +1,5 @@
 use crate::kv::{KVCommand, KeyValue};
+use omnipaxos::util::SnapshottedEntry;
 use rocksdb::{Options, DB};
 
 pub struct Database {

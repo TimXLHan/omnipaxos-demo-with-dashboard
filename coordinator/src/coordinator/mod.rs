@@ -263,6 +263,9 @@ impl Coordinator {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(10)).await;
+                // TODO: If we partition such that pid is a node that is not
+                // connected to the leader, then we won't be able to send any commands. Always
+                // send to leader instead?
                 for pid in clients.iter() {
                     if let Some(writer) = op_sockets.lock().await.get_mut(&pid) {
                         let cmd = Message::APICommand(KVCommand::Put(KeyValue {
@@ -299,6 +302,9 @@ impl Coordinator {
                     );
                 }
                 CDMessage::KVCommand(command) => {
+                    // TODO: If we partition such that op_sockets next() gives us a node that is not
+                    // connected to the leader, then we won't be able to send any commands. Always
+                    // send to leader instead?
                     if let Some((_, writer)) = self.op_sockets.lock().await.iter_mut().next() {
                         let cmd = Message::APICommand(command);
                         let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
@@ -368,6 +374,84 @@ impl Coordinator {
                     }
                     _ => (),
                 },
+                CDMessage::Scenario(scenario_type) => {
+                    assert!(
+                        self.nodes.len() == 5,
+                        "Must have 5 nodes to execute scenarios"
+                    );
+                    match scenario_type.as_str() {
+                        "qloss" => {
+                            // Remove connections to everyone but next leader
+                            let current_leader = self
+                                .max_round
+                                .expect("Need to have a current leader for scenarios")
+                                .leader;
+                            let next_leader = *self
+                                .nodes
+                                .iter()
+                                .filter(|&&n| n != current_leader)
+                                .next()
+                                .unwrap();
+                            let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
+                            let mut partitions = self.partitions.lock().await;
+                            for &from in other_nodes {
+                                for &to in self.nodes.iter() {
+                                    if to != next_leader && to != from {
+                                        let connection = match from <= to {
+                                            true => (from, to),
+                                            false => (to, from),
+                                        };
+                                        partitions.insert(connection);
+                                    }
+                                }
+                            }
+                            drop(partitions);
+                            self.send_network_update().await;
+                        }
+                        "constrained" => {
+                            let current_leader = self
+                                .max_round
+                                .expect("Need to have a current leader for scenarios")
+                                .leader;
+                            let other_nodes = self.nodes.iter().filter(|&&n| n != current_leader).take(2);
+                            let mut partitions = self.partitions.lock().await;
+                            for &from in other_nodes {
+                                for &to in self.nodes.iter() {
+                                    if to != from {
+                                        let connection = match from <= to {
+                                            true => (from, to),
+                                            false => (to, from),
+                                        };
+                                        partitions.insert(connection);
+                                    }
+                                }   
+                            }
+                            drop(partitions);
+                            self.send_network_update().await;
+                            // self.io_sender.send(IOMessage::CDMessage(CDMessage::StartBatchingPropose(10))).await;
+                            // tokio::spawn({
+                            // });
+                        }
+                        "chained" => {
+                            let mut partitions = self.partitions.lock().await;
+                            partitions.insert((1, 2));
+                            partitions.insert((1, 3));
+                            partitions.insert((1, 4));
+                            partitions.insert((2, 4));
+                            partitions.insert((2, 5));
+                            partitions.insert((3, 5));
+                            drop(partitions);
+                            self.send_network_update().await;
+                        }
+                        "restore" => {
+                            let mut partitions = self.partitions.lock().await;
+                            partitions.clear();
+                            drop(partitions);
+                            self.send_network_update().await;
+                        },
+                        _ => (),
+                    }
+                }
             }
         }
     }

@@ -13,8 +13,8 @@ pub mod coordinator {
         SetConnection(u64, u64, bool),
         OmnipaxosNodeCrashed(u64),
         OmnipaxosNodeJoined(u64),
-        // (pid_of_reporting_node, the ballot they are currently following)
         NewRound(u64, Option<Round>),
+        Scenario(String),
     }
 
     /// Same as in KV demo

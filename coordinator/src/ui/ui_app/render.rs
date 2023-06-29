@@ -126,7 +126,7 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
         let y = center_y + radius * angle.sin();
         let node_id = network_status.alive_nodes[i];
         let color = match network_status.max_round {
-            Some(Round { leader: l,.. }) if node_id == l => Color::Yellow,
+            Some(Round { leader: l, .. }) if node_id == l => Color::Yellow,
             _ => Color::Green,
         };
         // let rect = Rectangle::new(Point::new(x, y), 1.0, 1.0); // Adjust the width and height as desired

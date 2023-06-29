@@ -31,6 +31,20 @@ impl CLIHandler {
     }
 }
 
+const INVALID_COMMAND: &str = "Invalid command: valid commands are put/get/delete/connection/batch";
+const INVALID_DELETE: &str = "Invalid command, format is: delete <key-to-delete>";
+const INVALID_GET: &str = "Invalid command, format is: get <key-to-get>";
+const INVALID_PUT: &str = "Invalid command, format is: put <key> <value>";
+const INVALID_CONNECTION: &str =
+    "Invalid command, format is: connection <node-id> <node-id> <true/false>";
+const INVALID_CONNECTION_ARG1: &str = "Invalid command: first connection argument must be a number";
+const INVALID_CONNECTION_ARG2: &str =
+    "Invalid command: second connection argument must be a number";
+const INVALID_CONNECTION_ARG3: &str = "Invalid command: third connection argument must be a bool";
+const INVALID_BATCH: &str = "Invalid command, format is: batch <number-of-proposals>";
+const INVALID_BATCH_ARG1: &str = "Invalid command: first batch argument must be a number";
+const INVALID_SCENARIO: &str = "Invalid command, format is: scenario <restore/qloss/constrained/chained>";
+
 struct ParseCommandError(String);
 impl fmt::Display for ParseCommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -39,35 +53,31 @@ impl fmt::Display for ParseCommandError {
 }
 fn parse_command(line: String) -> Result<IOMessage, ParseCommandError> {
     let mut words = line.trim().split(" ");
-    let command_type = words.next().ok_or(ParseCommandError(
-        "Invalid command: valid commands are put/get/delete/connection/batch".to_string(),
-    ))?;
+    let command_type = words
+        .next()
+        .ok_or(ParseCommandError(INVALID_COMMAND.to_string()))?;
 
     let command = match command_type {
         "delete" => {
-            let value = words.next().ok_or(ParseCommandError(
-                "Invalid command, format is: delete <key-to-delete>".to_string(),
-            ))?;
+            let value = words
+                .next()
+                .ok_or(ParseCommandError(INVALID_DELETE.to_string()))?;
             IOMessage::CDMessage(CDMessage::KVCommand(KVCommand::Delete(value.to_string())))
         }
         "get" => {
-            let value = words.next().ok_or(ParseCommandError(
-                "Invalid command, format is: get <key-to-get>".to_string(),
-            ))?;
+            let value = words
+                .next()
+                .ok_or(ParseCommandError(INVALID_GET.to_string()))?;
             IOMessage::CDMessage(CDMessage::KVCommand(KVCommand::Get(value.to_string())))
         }
         "put" => {
             let key = words
                 .next()
-                .ok_or(ParseCommandError(
-                    "Invalid command, format is: put <key> <value>".to_string(),
-                ))?
+                .ok_or(ParseCommandError(INVALID_PUT.to_string()))?
                 .to_string();
             let value = words
                 .next()
-                .ok_or(ParseCommandError(
-                    "Invalid command, format is: put <key> <value>".to_string(),
-                ))?
+                .ok_or(ParseCommandError(INVALID_PUT.to_string()))?
                 .to_string();
             IOMessage::CDMessage(CDMessage::KVCommand(KVCommand::Put(KeyValue {
                 key,
@@ -77,56 +87,43 @@ fn parse_command(line: String) -> Result<IOMessage, ParseCommandError> {
         "connection" => {
             let from = words
                 .next()
-                .ok_or(ParseCommandError(
-                    "Invalid command, format is: connection <node-id> <node-id> <1/0>".to_string(),
-                ))?
+                .ok_or(ParseCommandError(INVALID_CONNECTION.to_string()))?
                 .parse::<u64>()
-                .map_err(|_| {
-                    ParseCommandError(
-                        "Invalid command: first connection argument must be a number".to_string(),
-                    )
-                })?;
+                .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG1.to_string()))?;
             let to = words
                 .next()
-                .ok_or(ParseCommandError(
-                    "Invalid command, format is: connection <node-id> <node-id> <1/0>".to_string(),
-                ))?
+                .ok_or(ParseCommandError(INVALID_CONNECTION.to_string()))?
                 .parse::<u64>()
-                .map_err(|_| {
-                    ParseCommandError(
-                        "Invalid command: second connection argument must be a number".to_string(),
-                    )
-                })?;
+                .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG2.to_string()))?;
             let connection_status = words
                 .next()
-                .ok_or(ParseCommandError(
-                    "Invalid command, format is: connection <node-id> <node-id> <1/0>".to_string(),
-                ))?
+                .ok_or(ParseCommandError(INVALID_CONNECTION.to_string()))?
                 .parse::<bool>()
-                .map_err(|_| {
-                    ParseCommandError(
-                        "Invalid command: third connection argument must be a bool".to_string(),
-                    )
-                })?;
+                .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG3.to_string()))?;
             IOMessage::CDMessage(CDMessage::SetConnection(from, to, connection_status))
         }
         "batch" => {
             let num_proposals = words
                 .next()
-                .ok_or(ParseCommandError(
-                    "Invalid command, format is: batch <number-of-proposals>".to_string(),
-                ))?
+                .ok_or(ParseCommandError(INVALID_BATCH.to_string()))?
                 .parse::<u64>()
-                .map_err(|_| {
-                    ParseCommandError(
-                        "Invalid command: first batch argument must be a number".to_string(),
-                    )
-                })?;
+                .map_err(|_| ParseCommandError(INVALID_BATCH_ARG1.to_string()))?;
             IOMessage::CDMessage(CDMessage::StartBatchingPropose(num_proposals))
         }
-        _ => Err(ParseCommandError(
-            "Invalid command: valid commands are put/get/delete/connection".to_string(),
-        ))?,
+        "scenario" => {
+            let scenario_type = words
+                .next()
+                .ok_or(ParseCommandError(INVALID_SCENARIO.to_string()))?;
+            match scenario_type {
+                "qloss" => (),
+                "constrained" => (),
+                "chained" => (),
+                "restore" => (),
+                _ => return Err(ParseCommandError(INVALID_SCENARIO.to_string())),
+            }
+            IOMessage::CDMessage(CDMessage::Scenario(scenario_type.to_string()))
+        }
+        _ => Err(ParseCommandError(INVALID_COMMAND.to_string()))?,
     };
     Ok(command)
 }

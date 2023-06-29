@@ -53,10 +53,12 @@ async fn main() {
         pid: *PID,
         ..Default::default()
     };
+    let mut nodes = PEERS.clone();
+    nodes.push(*PID);
+    nodes.sort();
     let cluster_config = ClusterConfig {
         configuration_id: 1,
-        // TODO: get nodes from env variable
-        nodes: vec![1, 2, 3],
+        nodes,
         ..Default::default()
     };
     let op_config = OmniPaxosConfig {
@@ -69,7 +71,6 @@ async fn main() {
     let mut op_server = OmniPaxosServer {
         network: network::Network::new().await,
         omni_paxos: Arc::clone(&omni_paxos),
-        peers: PEERS.clone(),
         pid: *PID,
         last_sent_decided_idx: 0,
         last_sent_leader: None,

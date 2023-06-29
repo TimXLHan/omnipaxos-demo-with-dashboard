@@ -37,7 +37,6 @@ pub enum APIResponse {
 pub struct OmniPaxosServer {
     pub omni_paxos: Arc<Mutex<OmniPaxosKV>>,
     pub pid: NodeId,
-    pub peers: Vec<NodeId>,
     pub last_sent_decided_idx: u64,
     pub last_sent_leader: Option<Ballot>,
     pub network: Network,
