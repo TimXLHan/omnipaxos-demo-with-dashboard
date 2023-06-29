@@ -1,6 +1,6 @@
 use crate::kv::KVCommand;
 use crate::server::OmniPaxosServer;
-use omnipaxos::{util::NodeId, *};
+use omnipaxos::{util::{NodeId, FlexibleQuorum}, *};
 use omnipaxos_storage::memory_storage::MemoryStorage;
 use std::{
     env,
@@ -43,6 +43,18 @@ lazy_static! {
     } else {
         panic!("missing PID")
     };
+    pub static ref FLEX_QUORUM: Option<FlexibleQuorum> = if let Ok(var) = env::var("FLEX_QUORUM") {
+        let x = serde_json::from_str::<Vec<usize>>(&var).expect("wrong config format");
+        if x.len() != 2 {
+            panic!("wrong config format");
+        }
+        Some(FlexibleQuorum {
+            read_quorum_size: x[0],
+            write_quorum_size: x[1],
+        })
+    } else {
+        None
+    };
 }
 
 type OmniPaxosKV = OmniPaxos<KVCommand, MemoryStorage<KVCommand>>;
@@ -59,7 +71,7 @@ async fn main() {
     let cluster_config = ClusterConfig {
         configuration_id: 1,
         nodes,
-        ..Default::default()
+        flexible_quorum: FLEX_QUORUM.clone(),
     };
     let op_config = OmniPaxosConfig {
         server_config,

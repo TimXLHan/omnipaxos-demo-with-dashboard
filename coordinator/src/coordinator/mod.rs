@@ -154,7 +154,6 @@ impl Coordinator {
                         }
                         if let Ok(msg) = serde_json::from_slice::<Message>(&data) {
                             match msg {
-                                // TODO: Add this message type on client-side
                                 Message::APIResponse(APIResponse::NewRound(round)) => sender
                                     .send(IOMessage::CDMessage(CDMessage::NewRound(
                                         client_pid, round,
@@ -214,12 +213,9 @@ impl Coordinator {
                     loop {
                         let mut data = vec![];
                         reader.read_until(b'\n', &mut data).await.unwrap();
-                        if let Err(e) = central_sender
+                        _ = central_sender
                             .send((port, PORT_MAPPINGS.get(port).unwrap(), data))
                             .await
-                        {
-                            println!("DEBUG: senderror on central_sender: {:?}", e);
-                        };
                     }
                 });
             });
@@ -241,12 +237,7 @@ impl Coordinator {
                 let nodes_are_connected = !partitions.lock().await.contains(&connection);
                 if nodes_are_connected {
                     let sender = out_channels.get(to_port).unwrap().clone();
-                    if let Err(e) = sender.send(msg) {
-                        println!(
-                            "DEBUG: senderror on out_sender for port {:?}: {:?}",
-                            to_port, e
-                        );
-                    };
+                    _ = sender.send(msg);
                 }
             }
         });

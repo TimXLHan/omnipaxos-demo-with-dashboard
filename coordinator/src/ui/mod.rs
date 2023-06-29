@@ -133,10 +133,6 @@ impl UI {
             .unwrap();
     }
 
-    // TODO: Split this into multiple functions so we can specify to update only part of the UI. This
-    // will save on resources and I think help with canvas color flickering.
-    // See: https://stackoverflow.com/questions/71065741/tui-rs-flickering-when-drawing-multiple-widgets
-    // Example: update_network_widget(), update_input_widget(), update output_widget(), etc.
     async fn update_ui(&mut self) {
         let ui_app = self.ui_app.lock().await;
         self.terminal.draw(|rect| render(rect, &ui_app)).unwrap();

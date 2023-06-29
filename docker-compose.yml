@@ -46,6 +46,7 @@ services:
       - PEERS=[2,3,4,5]
       - PEER_ADDRS=["net:8012","net:8013","net:8014","net:8015"]
       - API_ADDR=net:8001
+        #- FLEX_QUORUM=[4,2]
     depends_on:
       - coordinator
 
@@ -60,6 +61,7 @@ services:
       - PEERS=[1,3,4,5]
       - PEER_ADDRS=["net:8021","net:8023","net:8024","net:8025"]
       - API_ADDR=net:8002
+        #- FLEX_QUORUM=[4,2]
     depends_on:
       - coordinator
 
@@ -74,6 +76,7 @@ services:
       - PEERS=[1,2,4,5]
       - PEER_ADDRS=["net:8031","net:8032","net:8034","net:8035"]
       - API_ADDR=net:8003
+        #- FLEX_QUORUM=[4,2]
     depends_on:
       - coordinator
 
@@ -88,6 +91,7 @@ services:
       - PEERS=[1,2,3,5]
       - PEER_ADDRS=["net:8041","net:8042","net:8043","net:8045"]
       - API_ADDR=net:8004
+        #- FLEX_QUORUM=[4,2]
     depends_on:
       - coordinator
 
@@ -102,5 +106,6 @@ services:
       - PEERS=[1,2,3,4]
       - PEER_ADDRS=["net:8051","net:8052","net:8053","net:8054"]
       - API_ADDR=net:8005
+        #- FLEX_QUORUM=[4,2]
     depends_on:
       - coordinator
