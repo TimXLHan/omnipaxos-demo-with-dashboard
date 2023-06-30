@@ -6,21 +6,22 @@ use ratatui::style::{Color, Style};
 use ratatui::symbols::Marker;
 use ratatui::text::{Span, Spans};
 use ratatui::widgets::canvas::{Canvas, Context, Line, Rectangle};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Wrap, BarChart};
 use ratatui::Frame;
 use std::collections::{HashMap, VecDeque};
 use std::f64::consts::PI;
 use tui_textarea::TextArea;
 
 use crate::ui::ui_app::UIApp;
-use crate::utils::{UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
+use crate::utils::{UI_BARCHART_WIDTH, UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
 
 /// render ui components
 pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
-where
-    B: Backend,
+    where
+        B: Backend,
 {
     let size = rect.size();
+    let window_width: usize = size.width.into();
 
     // Vertical layout
     let chunks = Layout::default()
@@ -36,7 +37,7 @@ where
                 // Input
                 Constraint::Length(3),
             ]
-            .as_ref(),
+                .as_ref(),
         )
         .split(size);
 
@@ -44,9 +45,14 @@ where
     let title = draw_title();
     rect.render_widget(title, chunks[0]);
 
-    // Sparkline
-    let sparkline = draw_sparkline(&app.throughput_data);
-    rect.render_widget(sparkline, chunks[1]);
+    // Chart
+    let chart_data: &Vec<(&str, u64)> = &app.throughput_data
+        .iter()
+        .take(window_width / UI_BARCHART_WIDTH as usize)
+        .map(|(s, num)| (s.as_str(), *num))
+        .collect::<Vec<(&str, u64)>>();
+    let chart = draw_chart(chart_data);
+    rect.render_widget(chart, chunks[1]);
 
     // Output & Status
     let body_chunks = Layout::default()
@@ -220,14 +226,16 @@ fn draw_title<'a>() -> Paragraph<'a> {
         )
 }
 
-fn draw_sparkline(data: &Vec<u64>) -> Sparkline {
-    Sparkline::default()
+fn draw_chart<'a>(data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
+    BarChart::default()
         .block(
             Block::default()
                 .title(UI_THROUGHPUT_TITLE)
                 .borders(Borders::ALL),
         )
         .data(data)
+        .bar_width(UI_BARCHART_WIDTH)
+        .value_style(Style::default().fg(Color::Black).bg(Color::Yellow))
         .style(Style::default().fg(Color::Green))
 }
 
@@ -250,19 +258,19 @@ fn draw_output<'a>(app: &UIApp, block_height: i64) -> Paragraph<'a> {
             .map(|s| Spans::from(Span::raw(s)))
             .collect::<Vec<_>>(),
     )
-    .style(Style::default().fg(Color::LightCyan))
-    .alignment(Alignment::Left)
-    .wrap(Wrap { trim: true })
-    .scroll((
-        (log_len as i64 - block_height + app.scroll).max(0) as u16,
-        0,
-    ))
-    .block(
-        Block::default()
-            // .title("Body")
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::White))
-            .border_type(BorderType::Plain)
-            .title(UI_OUTPUT_AREA_TITLE),
-    )
+        .style(Style::default().fg(Color::LightCyan))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true })
+        .scroll((
+            (log_len as i64 - block_height + app.scroll).max(0) as u16,
+            0,
+        ))
+        .block(
+            Block::default()
+                // .title("Body")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::White))
+                .border_type(BorderType::Plain)
+                .title(UI_OUTPUT_AREA_TITLE),
+        )
 }
