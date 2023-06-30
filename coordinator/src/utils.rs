@@ -7,3 +7,5 @@ pub const UI_INPUT_AREA_TITLE: &str = "Input(Enter to send)";
 pub const UI_THROUGHPUT_TITLE: &str = "Throughput(Req/s)";
 pub const UI_OUTPUT_AREA_TITLE: &str = "Output(Scroll with Up/Down, Quit with Ctrl-C)";
 pub const UI_TICK_RATE: Duration = Duration::from_millis(100);
+pub const UI_MAX_THROUGHPUT_SIZE: usize = 200;
+pub const UI_BARCHART_WIDTH: u16 = 4;

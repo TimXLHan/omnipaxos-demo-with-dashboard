@@ -13,7 +13,7 @@ pub struct UIApp<'a> {
     pub scroll: i64,
     pub input_area: TextArea<'a>,
     pub network_state: NetworkState,
-    pub throughput_data: Vec<u64>,
+    pub throughput_data: Vec<(String, u64)>,
     pub decided_idx: u64,
 }
 
