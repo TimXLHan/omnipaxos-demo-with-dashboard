@@ -20,6 +20,19 @@ use tokio::{
 use self::proposal_streamer::ProposalStreamer;
 pub mod proposal_streamer;
 
+fn connection_to_port(from: &u64, to: &u64) -> u64 {
+    8000 + (from * 10) + to
+}
+
+fn port_to_connection(port: &u64) -> (u64, u64) {
+    let from = ((port / 10) % 10) as u64;
+    let to = port % 10;
+    match from <= to {
+        true => (from, to),
+        false => (to, from),
+    }
+}
+
 lazy_static! {
     // Pids of nodes in the cluster
     static ref NODES: Vec<u64> = if let Ok(var) = env::var("NODES") {
@@ -35,8 +48,8 @@ lazy_static! {
         for from in NODES.iter() {
             i += 1;
             for to in &NODES[i..] {
-                let from_port = 8000 + (from * 10) + to;
-                let to_port = 8000 + (to * 10) + from;
+                let from_port = connection_to_port(from, to);
+                let to_port = connection_to_port(to, from);
                 port_mappings.insert(from_port, to_port);
                 port_mappings.insert(to_port, from_port);
             }
@@ -59,7 +72,7 @@ lazy_static! {
         for from in NODES.iter() {
             for to in NODES.iter() {
                 if from != to {
-                    let port = 8000 + (from * 10) + to;
+                    let port = connection_to_port(from, to);
                     pid_mapping.insert(port, *from);
                 }
             }
@@ -86,7 +99,7 @@ pub struct Coordinator {
     receiver: Receiver<CDMessage>,
     io_sender: Sender<IOMessage>,
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
-    partitions: Arc<Mutex<HashSet<(u64, u64)>>>,
+    partitions: Arc<Mutex<HashSet<u64>>>,
     nodes: Vec<u64>,
     max_round: Arc<Mutex<Option<Round>>>,
     cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
@@ -106,6 +119,7 @@ impl Coordinator {
     }
 
     async fn create_network_state(&self) -> NetworkState {
+        let partitions: HashSet<(u64, u64)> = self.partitions.lock().await.iter().map(port_to_connection).collect();
         NetworkState {
             nodes: self.nodes.clone(),
             alive_nodes: self
@@ -115,7 +129,7 @@ impl Coordinator {
                 .keys()
                 .map(|&key| key)
                 .collect(),
-            partitions: self.partitions.lock().await.clone(),
+            partitions,
             max_round: self.max_round.lock().await.clone(),
         }
     }
@@ -190,7 +204,7 @@ impl Coordinator {
         }
     }
 
-    async fn create_network_actor(partitions: Arc<Mutex<HashSet<(u64, u64)>>>) {
+    async fn create_network_actor(partitions: Arc<Mutex<HashSet<u64>>>) {
         // setup intra-cluster communication
         let mut out_channels = HashMap::new();
         for port in PORT_MAPPINGS.keys() {
@@ -240,16 +254,7 @@ impl Coordinator {
         tokio::spawn(async move {
             while let Some((from_port, to_port, msg)) = central_receiver.recv().await {
                 // drop message if network is partitioned between sender and receiver
-                // TODO: TUI can only display undirected connections, so we don't support one way
-                // connect partitions
-                let connection = match (
-                    PORT_TO_PID_MAPPING.get(from_port).unwrap(),
-                    PORT_TO_PID_MAPPING.get(to_port).unwrap(),
-                ) {
-                    (from, to) if from <= to => (*from, *to),
-                    (from, to) => (*to, *from),
-                };
-                let nodes_are_connected = !partitions.lock().await.contains(&connection);
+                let nodes_are_connected = !partitions.lock().await.contains(&from_port);
                 if nodes_are_connected {
                     let sender = out_channels.get(to_port).unwrap().clone();
                     _ = sender.send(msg);
@@ -288,32 +293,16 @@ impl Coordinator {
                         self.send_to_ui(UIMessage::NoSuchNode(to.unwrap(), self.nodes.clone()))
                             .await;
                     } else {
-                        // TODO: translate PIDs to ports so network_actor doesn't have to do it
-                        // constantly.
-                        // TODO: TUI can only display undirected connections, so we don't support one way
-                        // connect partitions
                         match to {
                             Some(to) => {
-                                let connection = self.get_connection(from, to);
-                                let mut partitions = self.partitions.lock().await;
-                                match is_connected {
-                                    true => partitions.remove(&connection),
-                                    false => !partitions.insert(connection),
-                                };
-                                drop(partitions);
+                                self.set_partition(from, to, is_connected).await;
                                 self.send_network_update().await;
                             }
                             None => {
                                 let other_nodes = self.nodes.iter().filter(|&&n| n != from);
-                                let mut partitions = self.partitions.lock().await;
-                                for node in other_nodes {
-                                    let connection = self.get_connection(from, *node);
-                                    match is_connected {
-                                        true => partitions.remove(&connection),
-                                        false => !partitions.insert(connection),
-                                    };
+                                for to in other_nodes {
+                                    self.set_partition(from, *to, is_connected).await;
                                 }
-                                drop(partitions);
                                 self.send_network_update().await;
                             }
                         }
@@ -370,10 +359,18 @@ impl Coordinator {
             .unwrap();
     }
 
-    fn get_connection(&self, from: u64, to: u64) -> (u64, u64) {
-        match from <= to {
-            true => (from, to),
-            false => (to, from),
+    async fn set_partition(&self, from: u64, to: u64, is_connected: bool) {
+        // UI can only display undirected connections, so we add partitions in both
+        // connection directions
+        let from_port = connection_to_port(&from, &to);
+        let to_port = connection_to_port(&to, &from);
+        let mut partitions = self.partitions.lock().await;
+        if is_connected {
+            partitions.remove(&from_port);
+            partitions.remove(&to_port);
+        } else {
+            partitions.insert(from_port);
+            partitions.insert(to_port);
         }
     }
 
@@ -406,15 +403,14 @@ impl Coordinator {
                 let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
                 let mut partitions = self.partitions.lock().await;
                 partitions.clear();
+                drop(partitions);
                 for &from in other_nodes {
                     for &to in self.nodes.iter() {
                         if to != next_leader && to != from {
-                            let connection = self.get_connection(from, to);
-                            partitions.insert(connection);
+                            self.set_partition(from, to, false).await;
                         }
                     }
                 }
-                drop(partitions);
                 self.send_network_update().await;
             }
             "constrained" => {
@@ -431,13 +427,12 @@ impl Coordinator {
                     .unwrap();
                 let mut partitions = self.partitions.lock().await;
                 partitions.clear();
+                drop(partitions);
                 for &to in self.nodes.iter() {
                     if to != next_leader {
-                        let connection = self.get_connection(next_leader, to);
-                        partitions.insert(connection);
+                        self.set_partition(next_leader, to, false).await;
                     }
                 }
-                drop(partitions);
                 self.send_network_update().await;
                 // Decide some values without next leader
                 self.batch_proposals(10).await;
@@ -446,28 +441,27 @@ impl Coordinator {
                 let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
                 let mut partitions = self.partitions.lock().await;
                 partitions.clear();
+                drop(partitions);
                 for &from in other_nodes {
                     for &to in self.nodes.iter() {
                         if to != next_leader && to != from {
-                            let connection = self.get_connection(from, to);
-                            partitions.insert(connection);
+                            self.set_partition(from, to, false).await;
                         }
                     }
                 }
-                partitions.insert(self.get_connection(next_leader, current_leader));
-                drop(partitions);
+                self.set_partition(next_leader, current_leader, false).await;
                 self.send_network_update().await;
             }
             "chained" => {
                 let mut partitions = self.partitions.lock().await;
                 partitions.clear();
-                partitions.insert((1, 2));
-                partitions.insert((1, 3));
-                partitions.insert((1, 4));
-                partitions.insert((2, 4));
-                partitions.insert((2, 5));
-                partitions.insert((3, 5));
                 drop(partitions);
+                self.set_partition(1, 2, false).await;
+                self.set_partition(1, 3, false).await;
+                self.set_partition(1, 4, false).await;
+                self.set_partition(2, 4, false).await;
+                self.set_partition(2, 5, false).await;
+                self.set_partition(3, 5, false).await;
                 self.send_network_update().await;
             }
             "restore" => {
