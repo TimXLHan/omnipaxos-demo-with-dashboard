@@ -112,7 +112,7 @@ impl Server {
 
     pub(crate) async fn run(&mut self) {
         let mut msg_interval = time::interval(Duration::from_millis(1));
-        let mut tick_interval = time::interval(Duration::from_millis(10));
+        let mut tick_interval = time::interval(Duration::from_millis(100));
         loop {
             tokio::select! {
                 biased;
