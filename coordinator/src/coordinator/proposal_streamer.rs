@@ -2,7 +2,7 @@ use std::{sync::Arc, collections::{HashMap, VecDeque}, time::Duration};
 use tokio::io::AsyncWriteExt;
 use tokio::{sync::{mpsc::Sender, Mutex}, net::tcp::OwnedWriteHalf};
 
-use crate::messages::{coordinator::{Message, KVCommand}, IOMessage};
+use crate::messages::{coordinator::{Message, KVCommand, Round}, IOMessage};
 
 const PROPOSE_TICK_RATE: Duration = Duration::from_millis(10);
 
@@ -10,22 +10,22 @@ pub struct ProposalStreamer {
     io_sender: Sender<IOMessage>,
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
     cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
+    max_round: Arc<Mutex<Option<Round>>>
 }
 
 impl ProposalStreamer {
-    pub fn new(io_sender: Sender<IOMessage>, op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>, cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>) -> Self {
+    pub fn new(io_sender: Sender<IOMessage>, op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>, cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>, max_round: Arc<Mutex<Option<Round>>>) -> Self {
         Self {
             io_sender,
             op_sockets,
             cmd_queue,
+            max_round,
         }
     }
 
     pub async fn propose_command(&self, cmd: KVCommand) {
-        // TODO: If we partition such that op_sockets next() gives us a node that is not
-        // connected to the leader, then we won't be able to send any commands. Always
-        // send to leader instead?
-        if let Some((_, writer)) = self.op_sockets.lock().await.iter_mut().next() {
+        let leader = (*self.max_round.lock().await).unwrap().leader;
+        if let Some(writer) = self.op_sockets.lock().await.get_mut(&leader) {
             let request = Message::APIRequest(cmd);
             let mut data = serde_json::to_vec(&request).expect("could not serialize cmd");
             data.push(b'\n');

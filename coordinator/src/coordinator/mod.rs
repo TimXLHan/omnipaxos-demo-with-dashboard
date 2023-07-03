@@ -78,7 +78,7 @@ pub struct Coordinator {
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
     partitions: Arc<Mutex<HashSet<(u64, u64)>>>,
     nodes: Vec<u64>,
-    max_round: Option<Round>,
+    max_round: Arc<Mutex<Option<Round>>>,
     cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
 }
 
@@ -91,7 +91,7 @@ impl Coordinator {
             partitions: Arc::new(Mutex::new(HashSet::new())),
             cmd_queue: Arc::new(Mutex::new(VecDeque::new())),
             nodes: vec![],
-            max_round: None,
+            max_round: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -106,7 +106,7 @@ impl Coordinator {
                 .map(|&key| key)
                 .collect(),
             partitions: self.partitions.lock().await.clone(),
-            max_round: self.max_round,
+            max_round: self.max_round.lock().await.clone(),
         }
     }
 
@@ -256,7 +256,7 @@ impl Coordinator {
                         .iter()
                         .map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap())
                         .collect();
-                    let mut proposer = ProposalStreamer::new(self.io_sender.clone(), self.op_sockets.clone(), self.cmd_queue.clone());
+                    let mut proposer = ProposalStreamer::new(self.io_sender.clone(), self.op_sockets.clone(), self.cmd_queue.clone(), self.max_round.clone());
                     tokio::spawn(async move {
                         proposer.run().await
                     });
@@ -316,16 +316,21 @@ impl Coordinator {
                     self.send_network_update().await;
                 }
                 CDMessage::StartBatchingPropose(num) => self.batch_proposals(num).await,
-                CDMessage::NewRound(_client_pid, new_round) => match (self.max_round, new_round) {
-                    (Some(old_round), Some(round)) if old_round < round => {
-                        self.max_round = Some(round);
-                        self.send_network_update().await;
+                CDMessage::NewRound(_client_pid, new_round) => {
+                    let mut curr_round = self.max_round.lock().await;
+                    match (*curr_round, new_round) {
+                        (Some(old_round), Some(round)) if old_round < round => {
+                            *curr_round = Some(round);
+                            drop(curr_round);
+                            self.send_network_update().await;
+                        }
+                        (None, Some(round)) => {
+                            *curr_round = Some(round);
+                            drop(curr_round);
+                            self.send_network_update().await;
+                        }
+                        _ => (),
                     }
-                    (None, Some(round)) => {
-                        self.max_round = Some(round);
-                        self.send_network_update().await;
-                    }
-                    _ => (),
                 },
                 CDMessage::Scenario(scenario_type) => {
                     assert!(
@@ -379,6 +384,7 @@ impl Coordinator {
                 // Remove connections to everyone but next leader
                 let current_leader = self
                     .max_round
+                    .lock().await
                     .expect("Need to have a current leader for quorum loss scenario")
                     .leader;
                 let next_leader = *self
@@ -404,7 +410,7 @@ impl Coordinator {
             "constrained" => {
                 // Disconnect next leader
                 let current_leader = self
-                    .max_round
+                    .max_round.lock().await
                     .expect("Need to have a current leader for constrained scenario")
                     .leader;
                 let next_leader = *self
