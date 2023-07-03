@@ -1,8 +1,18 @@
-use std::{sync::Arc, collections::{HashMap, VecDeque}, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::io::AsyncWriteExt;
-use tokio::{sync::{mpsc::Sender, Mutex}, net::tcp::OwnedWriteHalf};
+use tokio::{
+    net::tcp::OwnedWriteHalf,
+    sync::{mpsc::Sender, Mutex},
+};
 
-use crate::messages::{coordinator::{Message, KVCommand, Round}, IOMessage};
+use crate::messages::{
+    coordinator::{KVCommand, Message, Round},
+    IOMessage,
+};
 
 const PROPOSE_TICK_RATE: Duration = Duration::from_millis(10);
 
@@ -10,11 +20,16 @@ pub struct ProposalStreamer {
     io_sender: Sender<IOMessage>,
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
     cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
-    max_round: Arc<Mutex<Option<Round>>>
+    max_round: Arc<Mutex<Option<Round>>>,
 }
 
 impl ProposalStreamer {
-    pub fn new(io_sender: Sender<IOMessage>, op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>, cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>, max_round: Arc<Mutex<Option<Round>>>) -> Self {
+    pub fn new(
+        io_sender: Sender<IOMessage>,
+        op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
+        cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
+        max_round: Arc<Mutex<Option<Round>>>,
+    ) -> Self {
         Self {
             io_sender,
             op_sockets,
@@ -31,7 +46,12 @@ impl ProposalStreamer {
             data.push(b'\n');
             writer.write_all(&data).await.unwrap();
         } else {
-            self.io_sender.send(IOMessage::UIMessage(crate::messages::ui::UIMessage::ClusterUnreachable)).await.unwrap();
+            self.io_sender
+                .send(IOMessage::UIMessage(
+                    crate::messages::ui::UIMessage::ClusterUnreachable,
+                ))
+                .await
+                .unwrap();
         }
     }
 
@@ -48,4 +68,3 @@ impl ProposalStreamer {
         }
     }
 }
-

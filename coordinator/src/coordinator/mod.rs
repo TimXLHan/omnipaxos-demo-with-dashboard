@@ -119,7 +119,13 @@ impl Coordinator {
     }
 
     async fn create_network_state(&self) -> NetworkState {
-        let partitions: HashSet<(u64, u64)> = self.partitions.lock().await.iter().map(port_to_connection).collect();
+        let partitions: HashSet<(u64, u64)> = self
+            .partitions
+            .lock()
+            .await
+            .iter()
+            .map(port_to_connection)
+            .collect();
         NetworkState {
             nodes: self.nodes.clone(),
             alive_nodes: self
@@ -271,10 +277,13 @@ impl Coordinator {
                         .iter()
                         .map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap())
                         .collect();
-                    let mut proposer = ProposalStreamer::new(self.io_sender.clone(), self.op_sockets.clone(), self.cmd_queue.clone(), self.max_round.clone());
-                    tokio::spawn(async move {
-                        proposer.run().await
-                    });
+                    let mut proposer = ProposalStreamer::new(
+                        self.io_sender.clone(),
+                        self.op_sockets.clone(),
+                        self.cmd_queue.clone(),
+                        self.max_round.clone(),
+                    );
+                    tokio::spawn(async move { proposer.run().await });
 
                     let op_sockets = self.op_sockets.clone();
                     let io_sender = self.io_sender.clone();
@@ -330,7 +339,7 @@ impl Coordinator {
                         }
                         _ => (),
                     }
-                },
+                }
                 CDMessage::Scenario(scenario_type) => {
                     assert!(
                         self.nodes.len() == 5,
@@ -391,7 +400,8 @@ impl Coordinator {
                 // Remove connections to everyone but next leader
                 let current_leader = self
                     .max_round
-                    .lock().await
+                    .lock()
+                    .await
                     .expect("Need to have a current leader for quorum loss scenario")
                     .leader;
                 let next_leader = *self
@@ -416,7 +426,9 @@ impl Coordinator {
             "constrained" => {
                 // Disconnect next leader
                 let current_leader = self
-                    .max_round.lock().await
+                    .max_round
+                    .lock()
+                    .await
                     .expect("Need to have a current leader for constrained scenario")
                     .leader;
                 let next_leader = *self

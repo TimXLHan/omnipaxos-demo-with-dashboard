@@ -93,13 +93,23 @@ fn parse_command(line: String) -> Result<IOMessage, ParseCommandError> {
                 Err(ParseCommandError(INVALID_CONNECTION.to_string()))?
             }
             let (from, to, connection_status) = if args.len() == 2 {
-                let from = args[0].parse::<u64>().map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG1.to_string()))?;
-                let connection_status = args[1].parse::<bool>().map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG3.to_string()))?;
+                let from = args[0]
+                    .parse::<u64>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG1.to_string()))?;
+                let connection_status = args[1]
+                    .parse::<bool>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG3.to_string()))?;
                 (from, None, connection_status)
             } else {
-                let from = args[0].parse::<u64>().map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG1.to_string()))?;
-                let to = args[1].parse::<u64>().map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG2.to_string()))?;
-                let connection_status = args[2].parse::<bool>().map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG3.to_string()))?;
+                let from = args[0]
+                    .parse::<u64>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG1.to_string()))?;
+                let to = args[1]
+                    .parse::<u64>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG2.to_string()))?;
+                let connection_status = args[2]
+                    .parse::<bool>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG3.to_string()))?;
                 (from, Some(to), connection_status)
             };
             IOMessage::CDMessage(CDMessage::SetConnection(from, to, connection_status))
