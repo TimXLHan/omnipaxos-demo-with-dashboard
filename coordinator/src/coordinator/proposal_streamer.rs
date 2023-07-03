@@ -11,16 +11,25 @@ use tokio::{
 
 use crate::messages::{
     coordinator::{KVCommand, Message, Round},
+    ui::UIMessage,
     IOMessage,
 };
 
 const PROPOSE_TICK_RATE: Duration = Duration::from_millis(10);
+
+#[derive(Debug, Clone)]
+pub struct ProposalStatus {
+    currently_queued: usize,
+    batch_total: usize,
+}
 
 pub struct ProposalStreamer {
     io_sender: Sender<IOMessage>,
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
     cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
     max_round: Arc<Mutex<Option<Round>>>,
+    last_queue_size: usize,
+    current_batch_size: usize,
 }
 
 impl ProposalStreamer {
@@ -35,6 +44,8 @@ impl ProposalStreamer {
             op_sockets,
             cmd_queue,
             max_round,
+            last_queue_size: 0,
+            current_batch_size: 0,
         }
     }
 
@@ -47,9 +58,7 @@ impl ProposalStreamer {
             writer.write_all(&data).await.unwrap();
         } else {
             self.io_sender
-                .send(IOMessage::UIMessage(
-                    crate::messages::ui::UIMessage::ClusterUnreachable,
-                ))
+                .send(IOMessage::UIMessage(UIMessage::ClusterUnreachable))
                 .await
                 .unwrap();
         }
@@ -60,9 +69,23 @@ impl ProposalStreamer {
         loop {
             tokio::select! {
                 _ = propose_interval.tick() => {
-                    if let Some(cmd) = self.cmd_queue.lock().await.pop_back() {
-                        self.propose_command(cmd).await;
+                    let mut queue = self.cmd_queue.lock().await;
+                    let mut queue_len = queue.len();
+                    if queue_len > self.last_queue_size {
+                        self.current_batch_size += queue_len - self.last_queue_size;
+                        self.last_queue_size = queue_len;
+                    } else if queue_len == 0 {
+                        self.current_batch_size = 0;
                     }
+                    if let Some(cmd) = queue.pop_back() {
+                        self.propose_command(cmd).await;
+                        queue_len -= 1
+                    }
+                    let status = ProposalStatus {
+                        currently_queued: queue_len,
+                        batch_total: self.current_batch_size,
+                    };
+                    self.io_sender.send(IOMessage::UIMessage(UIMessage::ProposalStatus(status))).await.unwrap();
                 },
             }
         }

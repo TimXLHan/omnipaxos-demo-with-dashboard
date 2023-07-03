@@ -104,6 +104,9 @@ impl UI {
                 ));
                 self.update_ui().await;
             }
+            UIMessage::ProposalStatus(status) => {
+                // TODO: handle
+            }
             UIMessage::Debug(string) => {
                 self.ui_app.lock().await.append_log(string);
                 self.update_ui().await;
