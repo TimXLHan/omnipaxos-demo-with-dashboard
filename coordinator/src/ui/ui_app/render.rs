@@ -13,7 +13,7 @@ use std::f64::consts::PI;
 use tui_textarea::TextArea;
 
 use crate::ui::ui_app::UIApp;
-use crate::utils::{UI_BARCHART_WIDTH, UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
+use crate::utils::{UI_BARCHART_GAP, UI_BARCHART_WIDTH, UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
 
 /// render ui components
 pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
@@ -48,7 +48,7 @@ pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
     // Chart
     let chart_data: &Vec<(&str, u64)> = &app.throughput_data
         .iter()
-        .take(window_width / UI_BARCHART_WIDTH as usize)
+        .take(window_width / (UI_BARCHART_WIDTH + UI_BARCHART_GAP) as usize)
         .map(|(s, num)| (s.as_str(), *num))
         .collect::<Vec<(&str, u64)>>();
     let chart = draw_chart(chart_data);
@@ -132,8 +132,8 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
         let y = center_y + radius * angle.sin();
         let node_id = network_status.alive_nodes[i];
         let color = match network_status.max_round {
-            Some(Round { leader: l, .. }) if node_id == l => Color::Yellow,
-            _ => Color::Green,
+            Some(Round { leader: l, .. }) if node_id == l => Color::Green,
+            _ => Color::White,
         };
         // let rect = Rectangle::new(Point::new(x, y), 1.0, 1.0); // Adjust the width and height as desired
         let rect = Rectangle {
@@ -161,7 +161,7 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
                     y1: current_rect.y + current_rect.height / 2.0,
                     x2: next_rect.x + next_rect.width / 2.0,
                     y2: next_rect.y + next_rect.height / 2.0,
-                    color: Color::Green,
+                    color: Color::LightBlue,
                 };
                 lines.insert((i as u64, j as u64), line);
             }
@@ -235,8 +235,9 @@ fn draw_chart<'a>(data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
         )
         .data(data)
         .bar_width(UI_BARCHART_WIDTH)
-        .value_style(Style::default().fg(Color::Black).bg(Color::Yellow))
-        .style(Style::default().fg(Color::Green))
+        .bar_gap(UI_BARCHART_GAP)
+        .value_style(Style::default().fg(Color::Black).bg(Color::LightGreen))
+        .style(Style::default().fg(Color::LightGreen))
 }
 
 fn draw_input(mut textarea: TextArea) -> TextArea {

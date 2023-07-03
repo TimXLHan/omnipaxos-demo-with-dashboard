@@ -19,8 +19,9 @@ impl CLIHandler {
     pub async fn handle_user_input(&mut self, input: String) -> String {
         match parse_command(input) {
             Ok(io_message) => {
+                let out = format!("{:?}", &io_message);
                 self.io_sender.send(io_message).await.unwrap();
-                String::new()
+                out
             }
             Err(err) => {
                 //let now: String = Utc::now().format("%F %T> ").to_string();
@@ -31,7 +32,7 @@ impl CLIHandler {
     }
 }
 
-const INVALID_COMMAND: &str = "Invalid command: valid commands are put/get/delete/connection/batch";
+const INVALID_COMMAND: &str = "Invalid command: valid commands are put/get/delete/connection/batch/scenario";
 const INVALID_DELETE: &str = "Invalid command, format is: delete <key-to-delete>";
 const INVALID_GET: &str = "Invalid command, format is: get <key-to-get>";
 const INVALID_PUT: &str = "Invalid command, format is: put <key> <value>";
