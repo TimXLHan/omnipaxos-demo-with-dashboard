@@ -21,40 +21,50 @@ use self::proposal_streamer::ProposalStreamer;
 pub mod proposal_streamer;
 
 lazy_static! {
-    /// Port to port mapping, for which sockets should be proxied to each other.
-    pub static ref PORT_MAPPINGS: HashMap<u64, u64> = if let Ok(var) = env::var("PORT_MAPPINGS") {
-        let mut map = HashMap::new();
-        let x: Vec<Vec<u64>> = serde_json::from_str(&var).expect("wrong config format");
-        for mapping in x {
-            if mapping.len() != 2 {
-                panic!("wrong config format");
-            }
-            map.insert(mapping[0], mapping[1]);
-            map.insert(mapping[1], mapping[0]);
-        }
-        map
-    } else {
-        panic!("missing config")
-    };
-    /// Ports on which the nodes are supposed to connect with their client API socket.
-    pub static ref CLIENT_PORTS: Vec<u64> = if let Ok(var) = env::var("CLIENT_PORTS") {
+    // Pids of nodes in the cluster
+    static ref NODES: Vec<u64> = if let Ok(var) = env::var("NODES") {
         serde_json::from_str(&var).expect("wrong config format")
     } else {
-        panic!("missing config")
+        panic!("missing config");
     };
-    /// Mapping between PORT_MAPPING keys and CLIENT_PORTS
-    pub static ref PORT_TO_PID_MAPPING: HashMap<u64, u64> = if let Ok(var) = env::var("PORT_TO_PID_MAPPING") {
-        let mut map = HashMap::new();
-        let x: Vec<Vec<u64>> = serde_json::from_str(&var).expect("wrong config format");
-        for mapping in x {
-            if mapping.len() != 2 {
-                panic!("wrong config format");
+
+    /// Port to port mapping, for which sockets should be proxied to each other.
+    pub static ref PORT_MAPPINGS: HashMap<u64, u64> = {
+        let mut port_mappings = HashMap::new();
+        let mut i = 0;
+        for from in NODES.iter() {
+            i += 1;
+            for to in &NODES[i..] {
+                let from_port = 8000 + (from * 10) + to;
+                let to_port = 8000 + (to * 10) + from;
+                port_mappings.insert(from_port, to_port);
+                port_mappings.insert(to_port, from_port);
             }
-            map.insert(mapping[0], mapping[1]);
         }
-        map
-    } else {
-        panic!("missing config")
+        port_mappings
+    };
+
+    /// Ports on which the nodes are supposed to connect with their client API socket.
+    pub static ref CLIENT_PORTS: Vec<u64> = {
+        NODES.iter().map(|pid| 8000 + pid).collect()
+    };
+
+    /// Mapping between PORT_MAPPING keys and CLIENT_PORTS
+    pub static ref PORT_TO_PID_MAPPING: HashMap<u64, u64> = {
+        let mut pid_mapping = HashMap::new();
+        for node in NODES.iter() {
+            let port = 8000 + node;
+            pid_mapping.insert(port, *node);
+        }
+        for from in NODES.iter() {
+            for to in NODES.iter() {
+                if from != to {
+                    let port = 8000 + (from * 10) + to;
+                    pid_mapping.insert(port, *from);
+                }
+            }
+        }
+        pid_mapping
     };
 }
 
