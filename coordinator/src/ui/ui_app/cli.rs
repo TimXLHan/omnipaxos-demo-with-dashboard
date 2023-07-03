@@ -19,8 +19,9 @@ impl CLIHandler {
     pub async fn handle_user_input(&mut self, input: String) -> String {
         match parse_command(input) {
             Ok(io_message) => {
+                let out = format!("{:?}", &io_message);
                 self.io_sender.send(io_message).await.unwrap();
-                String::new()
+                out
             }
             Err(err) => {
                 //let now: String = Utc::now().format("%F %T> ").to_string();

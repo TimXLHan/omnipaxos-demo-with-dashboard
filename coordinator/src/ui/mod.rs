@@ -14,7 +14,7 @@ use crate::messages::{ui::UIMessage, IOMessage};
 use crate::ui::ui_app::cli::CLIHandler;
 use crate::ui::ui_app::render::render;
 use crate::ui::ui_app::UIApp;
-use crate::utils::UI_TICK_RATE;
+use crate::utils::{UI_MAX_THROUGHPUT_SIZE, UI_TICK_RATE};
 
 mod ui_app;
 
@@ -157,9 +157,11 @@ impl Ticker {
                 _ = ui_interval.tick() => {
                     {
                         let mut ui_app = self.ui_app.lock().await;
-                        let throughput = (ui_app.decided_idx as f64 - last_decided_idx as f64).max(0.0) as f64 / (UI_TICK_RATE.as_millis() as f64 / 1000.0) as f64;
-                        // TODO: change to a constant time operation
-                        ui_app.throughput_data.insert(0, throughput as u64);
+                        let throughput = (ui_app.decided_idx as f64 - last_decided_idx as f64).max(0.0) as f64 / (UI_TICK_RATE.as_millis() as f64 / 100.0) as f64;
+                        ui_app.throughput_data.insert(0, ("CL".to_string(), throughput as u64));
+                        if ui_app.throughput_data.len() > UI_MAX_THROUGHPUT_SIZE {
+                            ui_app.throughput_data.pop();
+                        }
                         last_decided_idx = ui_app.decided_idx;
                     }
                     self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
