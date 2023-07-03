@@ -4,7 +4,7 @@ use crate::messages::IOMessage;
 use rand::random;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::env;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
@@ -16,6 +16,9 @@ use tokio::{
     net::TcpListener,
     sync::{broadcast, mpsc, Mutex},
 };
+
+use self::proposal_streamer::ProposalStreamer;
+pub mod proposal_streamer;
 
 lazy_static! {
     /// Port to port mapping, for which sockets should be proxied to each other.
@@ -76,6 +79,7 @@ pub struct Coordinator {
     partitions: Arc<Mutex<HashSet<(u64, u64)>>>,
     nodes: Vec<u64>,
     max_round: Option<Round>,
+    cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
 }
 
 impl Coordinator {
@@ -85,6 +89,7 @@ impl Coordinator {
             io_sender,
             op_sockets: Arc::new(Mutex::new(HashMap::new())),
             partitions: Arc::new(Mutex::new(HashSet::new())),
+            cmd_queue: Arc::new(Mutex::new(VecDeque::new())),
             nodes: vec![],
             max_round: None,
         }
@@ -243,39 +248,6 @@ impl Coordinator {
         });
     }
 
-    async fn create_background_proposals(
-        mut num_proposals: u64,
-        op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
-    ) {
-        let clients: Vec<u64> = CLIENT_PORTS
-            .iter()
-            .map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap())
-            .collect();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                // TODO: If we partition such that pid is a node that is not
-                // connected to the leader, then we won't be able to send any commands. Always
-                // send to leader instead?
-                for pid in clients.iter() {
-                    if let Some(writer) = op_sockets.lock().await.get_mut(&pid) {
-                        let cmd = Message::APIRequest(KVCommand::Put(KeyValue {
-                            key: random::<u64>().to_string(),
-                            value: random::<u64>().to_string(),
-                        }));
-                        let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
-                        data.push(b'\n');
-                        writer.write_all(&data).await.unwrap();
-                    }
-                }
-                num_proposals -= 1;
-                if num_proposals == 0 {
-                    break;
-                }
-            }
-        });
-    }
-
     pub async fn run(&mut self) {
         while let Some(m) = self.receiver.recv().await {
             match m {
@@ -284,27 +256,20 @@ impl Coordinator {
                         .iter()
                         .map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap())
                         .collect();
+                    let mut proposer = ProposalStreamer::new(self.io_sender.clone(), self.op_sockets.clone(), self.cmd_queue.clone());
+                    tokio::spawn(async move {
+                        proposer.run().await
+                    });
+
                     let op_sockets = self.op_sockets.clone();
                     let io_sender = self.io_sender.clone();
                     let partitions = self.partitions.clone();
                     join!(
                         Coordinator::create_omnipaxos_listeners(op_sockets, io_sender),
-                        Coordinator::create_network_actor(partitions)
+                        Coordinator::create_network_actor(partitions),
                     );
                 }
-                CDMessage::KVCommand(command) => {
-                    // TODO: If we partition such that op_sockets next() gives us a node that is not
-                    // connected to the leader, then we won't be able to send any commands. Always
-                    // send to leader instead?
-                    if let Some((_, writer)) = self.op_sockets.lock().await.iter_mut().next() {
-                        let cmd = Message::APIRequest(command);
-                        let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
-                        data.push(b'\n');
-                        writer.write_all(&data).await.unwrap();
-                    } else {
-                        self.send_to_ui(UIMessage::ClusterUnreachable).await;
-                    }
-                }
+                CDMessage::KVCommand(command) => self.cmd_queue.lock().await.push_front(command),
                 CDMessage::SetConnection(from, to, is_connected) => {
                     if !self.nodes.contains(&from) {
                         self.send_to_ui(UIMessage::NoSuchNode(from, self.nodes.clone()))
@@ -351,8 +316,14 @@ impl Coordinator {
                     self.send_network_update().await;
                 }
                 CDMessage::StartBatchingPropose(num) => {
-                    let op_sockets = self.op_sockets.clone();
-                    Coordinator::create_background_proposals(num, op_sockets).await;
+                    let mut cmd_queue = self.cmd_queue.lock().await;
+                    for _ in 0..num {
+                        let cmd = KVCommand::Put(KeyValue {
+                            key: random::<u64>().to_string(),
+                            value: random::<u64>().to_string(),
+                        });
+                        cmd_queue.push_front(cmd);
+                    }
                 }
                 CDMessage::NewRound(_client_pid, new_round) => match (self.max_round, new_round) {
                     (Some(old_round), Some(round)) if old_round < round => {
