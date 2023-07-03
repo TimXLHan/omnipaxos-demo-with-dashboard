@@ -315,16 +315,7 @@ impl Coordinator {
                 CDMessage::OmnipaxosNodeJoined(_pid) => {
                     self.send_network_update().await;
                 }
-                CDMessage::StartBatchingPropose(num) => {
-                    let mut cmd_queue = self.cmd_queue.lock().await;
-                    for _ in 0..num {
-                        let cmd = KVCommand::Put(KeyValue {
-                            key: random::<u64>().to_string(),
-                            value: random::<u64>().to_string(),
-                        });
-                        cmd_queue.push_front(cmd);
-                    }
-                }
+                CDMessage::StartBatchingPropose(num) => self.batch_proposals(num).await,
                 CDMessage::NewRound(_client_pid, new_round) => match (self.max_round, new_round) {
                     (Some(old_round), Some(round)) if old_round < round => {
                         self.max_round = Some(round);
@@ -368,6 +359,17 @@ impl Coordinator {
         match from <= to {
             true => (from, to),
             false => (to, from),
+        }
+    }
+
+    async fn batch_proposals(&self, num: u64) {
+        let mut cmd_queue = self.cmd_queue.lock().await;
+        for _ in 0..num {
+            let cmd = KVCommand::Put(KeyValue {
+                key: random::<u64>().to_string(),
+                value: random::<u64>().to_string(),
+            });
+            cmd_queue.push_front(cmd);
         }
     }
 
@@ -422,8 +424,7 @@ impl Coordinator {
                 drop(partitions);
                 self.send_network_update().await;
                 // Decide some values without next leader
-                let op_sockets = self.op_sockets.clone();
-                Coordinator::create_background_proposals(10, op_sockets).await;
+                self.batch_proposals(10).await;
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 // Set connections to Constrained Scenario with next leader
                 let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
