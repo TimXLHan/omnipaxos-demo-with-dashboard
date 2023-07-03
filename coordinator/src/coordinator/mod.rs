@@ -302,43 +302,46 @@ impl Coordinator {
                         data.push(b'\n');
                         writer.write_all(&data).await.unwrap();
                     } else {
-                        self.io_sender
-                            .send(IOMessage::UIMessage(UIMessage::ClusterUnreachable))
-                            .await
-                            .unwrap();
+                        self.send_to_ui(UIMessage::ClusterUnreachable).await;
                     }
                 }
                 CDMessage::SetConnection(from, to, is_connected) => {
                     if !self.nodes.contains(&from) {
-                        self.io_sender
-                            .send(IOMessage::UIMessage(UIMessage::NoSuchNode(
-                                from,
-                                self.nodes.clone(),
-                            )))
-                            .await
-                            .unwrap();
-                    } else if !self.nodes.contains(&to) {
-                        self.io_sender
-                            .send(IOMessage::UIMessage(UIMessage::NoSuchNode(
-                                to,
-                                self.nodes.clone(),
-                            )))
-                            .await
-                            .unwrap();
+                        self.send_to_ui(UIMessage::NoSuchNode(from, self.nodes.clone()))
+                            .await;
+                    } else if to.is_some() && !self.nodes.contains(&to.unwrap()) {
+                        self.send_to_ui(UIMessage::NoSuchNode(to.unwrap(), self.nodes.clone()))
+                            .await;
                     } else {
                         // TODO: translate PIDs to ports so network_actor doesn't have to do it
                         // constantly.
                         // TODO: TUI can only display undirected connections, so we don't support one way
                         // connect partitions
-                        let connection = self.get_connection(from, to);
-                        {
-                            let mut partitions = self.partitions.lock().await;
-                            match is_connected {
-                                true => partitions.remove(&connection),
-                                false => !partitions.insert(connection),
-                            };
+                        match to {
+                            Some(to) => {
+                                let connection = self.get_connection(from, to);
+                                let mut partitions = self.partitions.lock().await;
+                                match is_connected {
+                                    true => partitions.remove(&connection),
+                                    false => !partitions.insert(connection),
+                                };
+                                drop(partitions);
+                                self.send_network_update().await;
+                            }
+                            None => {
+                                let other_nodes = self.nodes.iter().filter(|&&n| n != from);
+                                let mut partitions = self.partitions.lock().await;
+                                for node in other_nodes {
+                                    let connection = self.get_connection(from, *node);
+                                    match is_connected {
+                                        true => partitions.remove(&connection),
+                                        false => !partitions.insert(connection),
+                                    };
+                                }
+                                drop(partitions);
+                                self.send_network_update().await;
+                            }
                         }
-                        self.send_network_update().await;
                     }
                 }
                 CDMessage::OmnipaxosNodeCrashed(_pid) => {
@@ -367,93 +370,17 @@ impl Coordinator {
                         self.nodes.len() == 5,
                         "Must have 5 nodes to execute scenarios"
                     );
-                    match scenario_type.as_str() {
-                        "qloss" => {
-                            // Remove connections to everyone but next leader
-                            let current_leader = self
-                                .max_round
-                                .expect("Need to have a current leader for quorum loss scenario")
-                                .leader;
-                            let next_leader = *self
-                                .nodes
-                                .iter()
-                                .filter(|&&n| n != current_leader)
-                                .next()
-                                .unwrap();
-                            let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            for &from in other_nodes {
-                                for &to in self.nodes.iter() {
-                                    if to != next_leader && to != from {
-                                        let connection = self.get_connection(from, to);
-                                        partitions.insert(connection);
-                                    }
-                                }
-                            }
-                            drop(partitions);
-                            self.send_network_update().await;
-                        }
-                        "constrained" => {
-                            // Disconnect next leader
-                            let current_leader = self
-                                .max_round
-                                .expect("Need to have a current leader for constrained scenario")
-                                .leader;
-                            let next_leader = *self.nodes.iter().filter(|&&n| n != current_leader).next().unwrap();
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            for &to in self.nodes.iter() {
-                                if to != next_leader {
-                                    let connection = self.get_connection(next_leader, to);
-                                    partitions.insert(connection);
-                                }
-                            }
-                            drop(partitions);
-                            self.send_network_update().await;
-                            // Decide some values without next leader
-                            let op_sockets = self.op_sockets.clone();
-                            Coordinator::create_background_proposals(10, op_sockets).await;
-                            tokio::time::sleep(Duration::from_secs(3)).await;
-                            // Set connections to Constrained Scenario with next leader
-                            let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            for &from in other_nodes {
-                                for &to in self.nodes.iter() {
-                                    if to != next_leader && to != from {
-                                        let connection = self.get_connection(from, to);
-                                        partitions.insert(connection);
-                                    }
-                                }
-                            }
-                            partitions.insert(self.get_connection(next_leader, current_leader));
-                            drop(partitions);
-                            self.send_network_update().await;
-                        }
-                        "chained" => {
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            partitions.insert((1, 2));
-                            partitions.insert((1, 3));
-                            partitions.insert((1, 4));
-                            partitions.insert((2, 4));
-                            partitions.insert((2, 5));
-                            partitions.insert((3, 5));
-                            drop(partitions);
-                            self.send_network_update().await;
-                        }
-                        "restore" => {
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            drop(partitions);
-                            self.send_network_update().await;
-                        },
-                        _ => (),
-                    }
+                    self.handle_scenario(scenario_type).await;
                 }
             }
         }
+    }
+
+    async fn send_to_ui(&self, msg: UIMessage) {
+        self.io_sender
+            .send(IOMessage::UIMessage(msg))
+            .await
+            .unwrap();
     }
 
     async fn send_network_update(&self) {
@@ -466,10 +393,102 @@ impl Coordinator {
             .unwrap();
     }
 
-    fn get_connection(&self, from: u64, to:u64) -> (u64, u64) {
+    fn get_connection(&self, from: u64, to: u64) -> (u64, u64) {
         match from <= to {
             true => (from, to),
             false => (to, from),
+        }
+    }
+
+    async fn handle_scenario(&mut self, scenario_type: String) {
+        match scenario_type.as_str() {
+            "qloss" => {
+                // Remove connections to everyone but next leader
+                let current_leader = self
+                    .max_round
+                    .expect("Need to have a current leader for quorum loss scenario")
+                    .leader;
+                let next_leader = *self
+                    .nodes
+                    .iter()
+                    .filter(|&&n| n != current_leader)
+                    .next()
+                    .unwrap();
+                let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                for &from in other_nodes {
+                    for &to in self.nodes.iter() {
+                        if to != next_leader && to != from {
+                            let connection = self.get_connection(from, to);
+                            partitions.insert(connection);
+                        }
+                    }
+                }
+                drop(partitions);
+                self.send_network_update().await;
+            }
+            "constrained" => {
+                // Disconnect next leader
+                let current_leader = self
+                    .max_round
+                    .expect("Need to have a current leader for constrained scenario")
+                    .leader;
+                let next_leader = *self
+                    .nodes
+                    .iter()
+                    .filter(|&&n| n != current_leader)
+                    .next()
+                    .unwrap();
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                for &to in self.nodes.iter() {
+                    if to != next_leader {
+                        let connection = self.get_connection(next_leader, to);
+                        partitions.insert(connection);
+                    }
+                }
+                drop(partitions);
+                self.send_network_update().await;
+                // Decide some values without next leader
+                let op_sockets = self.op_sockets.clone();
+                Coordinator::create_background_proposals(10, op_sockets).await;
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                // Set connections to Constrained Scenario with next leader
+                let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                for &from in other_nodes {
+                    for &to in self.nodes.iter() {
+                        if to != next_leader && to != from {
+                            let connection = self.get_connection(from, to);
+                            partitions.insert(connection);
+                        }
+                    }
+                }
+                partitions.insert(self.get_connection(next_leader, current_leader));
+                drop(partitions);
+                self.send_network_update().await;
+            }
+            "chained" => {
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                partitions.insert((1, 2));
+                partitions.insert((1, 3));
+                partitions.insert((1, 4));
+                partitions.insert((2, 4));
+                partitions.insert((2, 5));
+                partitions.insert((3, 5));
+                drop(partitions);
+                self.send_network_update().await;
+            }
+            "restore" => {
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                drop(partitions);
+                self.send_network_update().await;
+            }
+            _ => (),
         }
     }
 }
