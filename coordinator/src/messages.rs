@@ -10,7 +10,7 @@ pub mod coordinator {
         StartBatchingPropose(u64),
         Initialize, // Launch to initialize the application
         KVCommand(KVCommand),
-        SetConnection(u64, u64, bool),
+        SetConnection(u64, Option<u64>, bool),
         OmnipaxosNodeCrashed(u64),
         OmnipaxosNodeJoined(u64),
         NewRound(u64, Option<Round>),
@@ -59,6 +59,7 @@ pub mod ui {
         OmnipaxosNodeCrashed(u64),
         ClusterUnreachable,
         NoSuchNode(u64, Vec<u64>),
+        ProposalStatus(u16),
         Debug(String),
         Exit,
     }

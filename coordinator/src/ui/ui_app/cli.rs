@@ -32,7 +32,8 @@ impl CLIHandler {
     }
 }
 
-const INVALID_COMMAND: &str = "Invalid command: valid commands are put/get/delete/connection/batch/scenario";
+const INVALID_COMMAND: &str =
+    "Invalid command: valid commands are put/get/delete/connection/batch/scenario";
 const INVALID_DELETE: &str = "Invalid command, format is: delete <key-to-delete>";
 const INVALID_GET: &str = "Invalid command, format is: get <key-to-get>";
 const INVALID_PUT: &str = "Invalid command, format is: put <key> <value>";
@@ -44,7 +45,8 @@ const INVALID_CONNECTION_ARG2: &str =
 const INVALID_CONNECTION_ARG3: &str = "Invalid command: third connection argument must be a bool";
 const INVALID_BATCH: &str = "Invalid command, format is: batch <number-of-proposals>";
 const INVALID_BATCH_ARG1: &str = "Invalid command: first batch argument must be a number";
-const INVALID_SCENARIO: &str = "Invalid command, format is: scenario <restore/qloss/constrained/chained>";
+const INVALID_SCENARIO: &str =
+    "Invalid command, format is: scenario <restore/qloss/constrained/chained>";
 
 struct ParseCommandError(String);
 impl fmt::Display for ParseCommandError {
@@ -86,21 +88,30 @@ fn parse_command(line: String) -> Result<IOMessage, ParseCommandError> {
             })))
         }
         "connection" => {
-            let from = words
-                .next()
-                .ok_or(ParseCommandError(INVALID_CONNECTION.to_string()))?
-                .parse::<u64>()
-                .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG1.to_string()))?;
-            let to = words
-                .next()
-                .ok_or(ParseCommandError(INVALID_CONNECTION.to_string()))?
-                .parse::<u64>()
-                .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG2.to_string()))?;
-            let connection_status = words
-                .next()
-                .ok_or(ParseCommandError(INVALID_CONNECTION.to_string()))?
-                .parse::<bool>()
-                .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG3.to_string()))?;
+            let args = words.collect::<Vec<&str>>();
+            if args.len() < 2 {
+                Err(ParseCommandError(INVALID_CONNECTION.to_string()))?
+            }
+            let (from, to, connection_status) = if args.len() == 2 {
+                let from = args[0]
+                    .parse::<u64>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG1.to_string()))?;
+                let connection_status = args[1]
+                    .parse::<bool>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG3.to_string()))?;
+                (from, None, connection_status)
+            } else {
+                let from = args[0]
+                    .parse::<u64>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG1.to_string()))?;
+                let to = args[1]
+                    .parse::<u64>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG2.to_string()))?;
+                let connection_status = args[2]
+                    .parse::<bool>()
+                    .map_err(|_| ParseCommandError(INVALID_CONNECTION_ARG3.to_string()))?;
+                (from, Some(to), connection_status)
+            };
             IOMessage::CDMessage(CDMessage::SetConnection(from, to, connection_status))
         }
         "batch" => {

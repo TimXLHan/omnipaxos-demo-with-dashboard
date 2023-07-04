@@ -4,7 +4,7 @@ use crate::messages::IOMessage;
 use rand::random;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::env;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
@@ -17,41 +17,67 @@ use tokio::{
     sync::{broadcast, mpsc, Mutex},
 };
 
+use self::proposal_streamer::ProposalStreamer;
+pub mod proposal_streamer;
+
+fn connection_to_port(from: &u64, to: &u64) -> u64 {
+    8000 + (from * 10) + to
+}
+
+fn port_to_connection(port: &u64) -> (u64, u64) {
+    let from = ((port / 10) % 10) as u64;
+    let to = port % 10;
+    match from <= to {
+        true => (from, to),
+        false => (to, from),
+    }
+}
+
 lazy_static! {
-    /// Port to port mapping, for which sockets should be proxied to each other.
-    pub static ref PORT_MAPPINGS: HashMap<u64, u64> = if let Ok(var) = env::var("PORT_MAPPINGS") {
-        let mut map = HashMap::new();
-        let x: Vec<Vec<u64>> = serde_json::from_str(&var).expect("wrong config format");
-        for mapping in x {
-            if mapping.len() != 2 {
-                panic!("wrong config format");
-            }
-            map.insert(mapping[0], mapping[1]);
-            map.insert(mapping[1], mapping[0]);
-        }
-        map
-    } else {
-        panic!("missing config")
-    };
-    /// Ports on which the nodes are supposed to connect with their client API socket.
-    pub static ref CLIENT_PORTS: Vec<u64> = if let Ok(var) = env::var("CLIENT_PORTS") {
+    // Pids of nodes in the cluster
+    static ref NODES: Vec<u64> = if let Ok(var) = env::var("NODES") {
         serde_json::from_str(&var).expect("wrong config format")
     } else {
-        panic!("missing config")
+        panic!("missing config");
     };
-    /// Mapping between PORT_MAPPING keys and CLIENT_PORTS
-    pub static ref PORT_TO_PID_MAPPING: HashMap<u64, u64> = if let Ok(var) = env::var("PORT_TO_PID_MAPPING") {
-        let mut map = HashMap::new();
-        let x: Vec<Vec<u64>> = serde_json::from_str(&var).expect("wrong config format");
-        for mapping in x {
-            if mapping.len() != 2 {
-                panic!("wrong config format");
+
+    /// Port to port mapping, for which sockets should be proxied to each other.
+    pub static ref PORT_MAPPINGS: HashMap<u64, u64> = {
+        let mut port_mappings = HashMap::new();
+        let mut i = 0;
+        for from in NODES.iter() {
+            i += 1;
+            for to in &NODES[i..] {
+                let from_port = connection_to_port(from, to);
+                let to_port = connection_to_port(to, from);
+                port_mappings.insert(from_port, to_port);
+                port_mappings.insert(to_port, from_port);
             }
-            map.insert(mapping[0], mapping[1]);
         }
-        map
-    } else {
-        panic!("missing config")
+        port_mappings
+    };
+
+    /// Ports on which the nodes are supposed to connect with their client API socket.
+    pub static ref CLIENT_PORTS: Vec<u64> = {
+        NODES.iter().map(|pid| 8000 + pid).collect()
+    };
+
+    /// Mapping between PORT_MAPPING keys and CLIENT_PORTS
+    pub static ref PORT_TO_PID_MAPPING: HashMap<u64, u64> = {
+        let mut pid_mapping = HashMap::new();
+        for node in NODES.iter() {
+            let port = 8000 + node;
+            pid_mapping.insert(port, *node);
+        }
+        for from in NODES.iter() {
+            for to in NODES.iter() {
+                if from != to {
+                    let port = connection_to_port(from, to);
+                    pid_mapping.insert(port, *from);
+                }
+            }
+        }
+        pid_mapping
     };
 }
 
@@ -73,9 +99,10 @@ pub struct Coordinator {
     receiver: Receiver<CDMessage>,
     io_sender: Sender<IOMessage>,
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
-    partitions: Arc<Mutex<HashSet<(u64, u64)>>>,
+    partitions: Arc<Mutex<HashSet<u64>>>,
     nodes: Vec<u64>,
-    max_round: Option<Round>,
+    max_round: Arc<Mutex<Option<Round>>>,
+    cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
 }
 
 impl Coordinator {
@@ -85,12 +112,20 @@ impl Coordinator {
             io_sender,
             op_sockets: Arc::new(Mutex::new(HashMap::new())),
             partitions: Arc::new(Mutex::new(HashSet::new())),
+            cmd_queue: Arc::new(Mutex::new(VecDeque::new())),
             nodes: vec![],
-            max_round: None,
+            max_round: Arc::new(Mutex::new(None)),
         }
     }
 
     async fn create_network_state(&self) -> NetworkState {
+        let partitions: HashSet<(u64, u64)> = self
+            .partitions
+            .lock()
+            .await
+            .iter()
+            .map(port_to_connection)
+            .collect();
         NetworkState {
             nodes: self.nodes.clone(),
             alive_nodes: self
@@ -100,8 +135,8 @@ impl Coordinator {
                 .keys()
                 .map(|&key| key)
                 .collect(),
-            partitions: self.partitions.lock().await.clone(),
-            max_round: self.max_round,
+            partitions,
+            max_round: self.max_round.lock().await.clone(),
         }
     }
 
@@ -175,7 +210,7 @@ impl Coordinator {
         }
     }
 
-    async fn create_network_actor(partitions: Arc<Mutex<HashSet<(u64, u64)>>>) {
+    async fn create_network_actor(partitions: Arc<Mutex<HashSet<u64>>>) {
         // setup intra-cluster communication
         let mut out_channels = HashMap::new();
         for port in PORT_MAPPINGS.keys() {
@@ -225,52 +260,10 @@ impl Coordinator {
         tokio::spawn(async move {
             while let Some((from_port, to_port, msg)) = central_receiver.recv().await {
                 // drop message if network is partitioned between sender and receiver
-                // TODO: TUI can only display undirected connections, so we don't support one way
-                // connect partitions
-                let connection = match (
-                    PORT_TO_PID_MAPPING.get(from_port).unwrap(),
-                    PORT_TO_PID_MAPPING.get(to_port).unwrap(),
-                ) {
-                    (from, to) if from <= to => (*from, *to),
-                    (from, to) => (*to, *from),
-                };
-                let nodes_are_connected = !partitions.lock().await.contains(&connection);
+                let nodes_are_connected = !partitions.lock().await.contains(&from_port);
                 if nodes_are_connected {
                     let sender = out_channels.get(to_port).unwrap().clone();
                     _ = sender.send(msg);
-                }
-            }
-        });
-    }
-
-    async fn create_background_proposals(
-        mut num_proposals: u64,
-        op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
-    ) {
-        let clients: Vec<u64> = CLIENT_PORTS
-            .iter()
-            .map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap())
-            .collect();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                // TODO: If we partition such that pid is a node that is not
-                // connected to the leader, then we won't be able to send any commands. Always
-                // send to leader instead?
-                for pid in clients.iter() {
-                    if let Some(writer) = op_sockets.lock().await.get_mut(&pid) {
-                        let cmd = Message::APIRequest(KVCommand::Put(KeyValue {
-                            key: random::<u64>().to_string(),
-                            value: random::<u64>().to_string(),
-                        }));
-                        let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
-                        data.push(b'\n');
-                        writer.write_all(&data).await.unwrap();
-                    }
-                }
-                num_proposals -= 1;
-                if num_proposals == 0 {
-                    break;
                 }
             }
         });
@@ -284,61 +277,45 @@ impl Coordinator {
                         .iter()
                         .map(|port| *PORT_TO_PID_MAPPING.get(port).unwrap())
                         .collect();
+                    let mut proposer = ProposalStreamer::new(
+                        self.io_sender.clone(),
+                        self.op_sockets.clone(),
+                        self.cmd_queue.clone(),
+                        self.max_round.clone(),
+                    );
+                    tokio::spawn(async move { proposer.run().await });
+
+
                     let op_sockets = self.op_sockets.clone();
                     let io_sender = self.io_sender.clone();
                     let partitions = self.partitions.clone();
                     join!(
                         Coordinator::create_omnipaxos_listeners(op_sockets, io_sender),
-                        Coordinator::create_network_actor(partitions)
+                        Coordinator::create_network_actor(partitions),
                     );
                 }
-                CDMessage::KVCommand(command) => {
-                    // TODO: If we partition such that op_sockets next() gives us a node that is not
-                    // connected to the leader, then we won't be able to send any commands. Always
-                    // send to leader instead?
-                    if let Some((_, writer)) = self.op_sockets.lock().await.iter_mut().next() {
-                        let cmd = Message::APIRequest(command);
-                        let mut data = serde_json::to_vec(&cmd).expect("could not serialize cmd");
-                        data.push(b'\n');
-                        writer.write_all(&data).await.unwrap();
-                    } else {
-                        self.io_sender
-                            .send(IOMessage::UIMessage(UIMessage::ClusterUnreachable))
-                            .await
-                            .unwrap();
-                    }
-                }
+                CDMessage::KVCommand(command) => self.cmd_queue.lock().await.push_front(command),
                 CDMessage::SetConnection(from, to, is_connected) => {
                     if !self.nodes.contains(&from) {
-                        self.io_sender
-                            .send(IOMessage::UIMessage(UIMessage::NoSuchNode(
-                                from,
-                                self.nodes.clone(),
-                            )))
-                            .await
-                            .unwrap();
-                    } else if !self.nodes.contains(&to) {
-                        self.io_sender
-                            .send(IOMessage::UIMessage(UIMessage::NoSuchNode(
-                                to,
-                                self.nodes.clone(),
-                            )))
-                            .await
-                            .unwrap();
+                        self.send_to_ui(UIMessage::NoSuchNode(from, self.nodes.clone()))
+                            .await;
+                    } else if to.is_some() && !self.nodes.contains(&to.unwrap()) {
+                        self.send_to_ui(UIMessage::NoSuchNode(to.unwrap(), self.nodes.clone()))
+                            .await;
                     } else {
-                        // TODO: translate PIDs to ports so network_actor doesn't have to do it
-                        // constantly.
-                        // TODO: TUI can only display undirected connections, so we don't support one way
-                        // connect partitions
-                        let connection = self.get_connection(from, to);
-                        {
-                            let mut partitions = self.partitions.lock().await;
-                            match is_connected {
-                                true => partitions.remove(&connection),
-                                false => !partitions.insert(connection),
-                            };
+                        match to {
+                            Some(to) => {
+                                self.set_partition(from, to, is_connected).await;
+                                self.send_network_update().await;
+                            }
+                            None => {
+                                let other_nodes = self.nodes.iter().filter(|&&n| n != from);
+                                for to in other_nodes {
+                                    self.set_partition(from, *to, is_connected).await;
+                                }
+                                self.send_network_update().await;
+                            }
                         }
-                        self.send_network_update().await;
                     }
                 }
                 CDMessage::OmnipaxosNodeCrashed(_pid) => {
@@ -347,113 +324,39 @@ impl Coordinator {
                 CDMessage::OmnipaxosNodeJoined(_pid) => {
                     self.send_network_update().await;
                 }
-                CDMessage::StartBatchingPropose(num) => {
-                    let op_sockets = self.op_sockets.clone();
-                    Coordinator::create_background_proposals(num, op_sockets).await;
+                CDMessage::StartBatchingPropose(num) => self.batch_proposals(num).await,
+                CDMessage::NewRound(_client_pid, new_round) => {
+                    let mut curr_round = self.max_round.lock().await;
+                    match (*curr_round, new_round) {
+                        (Some(old_round), Some(round)) if old_round < round => {
+                            *curr_round = Some(round);
+                            drop(curr_round);
+                            self.send_network_update().await;
+                        }
+                        (None, Some(round)) => {
+                            *curr_round = Some(round);
+                            drop(curr_round);
+                            self.send_network_update().await;
+                        }
+                        _ => (),
+                    }
                 }
-                CDMessage::NewRound(_client_pid, new_round) => match (self.max_round, new_round) {
-                    (Some(old_round), Some(round)) if old_round < round => {
-                        self.max_round = Some(round);
-                        self.send_network_update().await;
-                    }
-                    (None, Some(round)) => {
-                        self.max_round = Some(round);
-                        self.send_network_update().await;
-                    }
-                    _ => (),
-                },
                 CDMessage::Scenario(scenario_type) => {
                     assert!(
                         self.nodes.len() == 5,
                         "Must have 5 nodes to execute scenarios"
                     );
-                    match scenario_type.as_str() {
-                        "qloss" => {
-                            // Remove connections to everyone but next leader
-                            let current_leader = self
-                                .max_round
-                                .expect("Need to have a current leader for quorum loss scenario")
-                                .leader;
-                            let next_leader = *self
-                                .nodes
-                                .iter()
-                                .filter(|&&n| n != current_leader)
-                                .next()
-                                .unwrap();
-                            let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            for &from in other_nodes {
-                                for &to in self.nodes.iter() {
-                                    if to != next_leader && to != from {
-                                        let connection = self.get_connection(from, to);
-                                        partitions.insert(connection);
-                                    }
-                                }
-                            }
-                            drop(partitions);
-                            self.send_network_update().await;
-                        }
-                        "constrained" => {
-                            // Disconnect next leader
-                            let current_leader = self
-                                .max_round
-                                .expect("Need to have a current leader for constrained scenario")
-                                .leader;
-                            let next_leader = *self.nodes.iter().filter(|&&n| n != current_leader).next().unwrap();
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            for &to in self.nodes.iter() {
-                                if to != next_leader {
-                                    let connection = self.get_connection(next_leader, to);
-                                    partitions.insert(connection);
-                                }
-                            }
-                            drop(partitions);
-                            self.send_network_update().await;
-                            // Decide some values without next leader
-                            let op_sockets = self.op_sockets.clone();
-                            Coordinator::create_background_proposals(10, op_sockets).await;
-                            tokio::time::sleep(Duration::from_secs(3)).await;
-                            // Set connections to Constrained Scenario with next leader
-                            let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            for &from in other_nodes {
-                                for &to in self.nodes.iter() {
-                                    if to != next_leader && to != from {
-                                        let connection = self.get_connection(from, to);
-                                        partitions.insert(connection);
-                                    }
-                                }
-                            }
-                            partitions.insert(self.get_connection(next_leader, current_leader));
-                            drop(partitions);
-                            self.send_network_update().await;
-                        }
-                        "chained" => {
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            partitions.insert((1, 2));
-                            partitions.insert((1, 3));
-                            partitions.insert((1, 4));
-                            partitions.insert((2, 4));
-                            partitions.insert((2, 5));
-                            partitions.insert((3, 5));
-                            drop(partitions);
-                            self.send_network_update().await;
-                        }
-                        "restore" => {
-                            let mut partitions = self.partitions.lock().await;
-                            partitions.clear();
-                            drop(partitions);
-                            self.send_network_update().await;
-                        },
-                        _ => (),
-                    }
+                    self.handle_scenario(scenario_type).await;
                 }
             }
         }
+    }
+
+    async fn send_to_ui(&self, msg: UIMessage) {
+        self.io_sender
+            .send(IOMessage::UIMessage(msg))
+            .await
+            .unwrap();
     }
 
     async fn send_network_update(&self) {
@@ -466,10 +369,122 @@ impl Coordinator {
             .unwrap();
     }
 
-    fn get_connection(&self, from: u64, to:u64) -> (u64, u64) {
-        match from <= to {
-            true => (from, to),
-            false => (to, from),
+    async fn set_partition(&self, from: u64, to: u64, is_connected: bool) {
+        // UI can only display undirected connections, so we add partitions in both
+        // connection directions
+        let from_port = connection_to_port(&from, &to);
+        let to_port = connection_to_port(&to, &from);
+        let mut partitions = self.partitions.lock().await;
+        if is_connected {
+            partitions.remove(&from_port);
+
+            partitions.remove(&to_port);
+        } else {
+            partitions.insert(from_port);
+            partitions.insert(to_port);
+        }
+    }
+
+    async fn batch_proposals(&self, num: u64) {
+        let mut cmd_queue = self.cmd_queue.lock().await;
+        for _ in 0..num {
+            let cmd = KVCommand::Put(KeyValue {
+                key: random::<u64>().to_string(),
+                value: random::<u64>().to_string(),
+            });
+            cmd_queue.push_front(cmd);
+        }
+    }
+
+    async fn handle_scenario(&mut self, scenario_type: String) {
+        match scenario_type.as_str() {
+            "qloss" => {
+                // Remove connections to everyone but next leader
+                let current_leader = self
+                    .max_round
+                    .lock()
+                    .await
+                    .expect("Need to have a current leader for quorum loss scenario")
+                    .leader;
+                let next_leader = *self
+                    .nodes
+                    .iter()
+                    .filter(|&&n| n != current_leader)
+                    .next()
+                    .unwrap();
+                let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                drop(partitions);
+                for &from in other_nodes {
+                    for &to in self.nodes.iter() {
+                        if to != next_leader && to != from {
+                            self.set_partition(from, to, false).await;
+                        }
+                    }
+                }
+                self.send_network_update().await;
+            }
+            "constrained" => {
+                // Disconnect next leader
+                let current_leader = self
+                    .max_round
+                    .lock()
+                    .await
+                    .expect("Need to have a current leader for constrained scenario")
+                    .leader;
+                let next_leader = *self
+                    .nodes
+                    .iter()
+                    .filter(|&&n| n != current_leader)
+                    .next()
+                    .unwrap();
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                drop(partitions);
+                for &to in self.nodes.iter() {
+                    if to != next_leader {
+                        self.set_partition(next_leader, to, false).await;
+                    }
+                }
+                self.send_network_update().await;
+                // Decide some values without next leader
+                self.batch_proposals(10).await;
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                // Set connections to Constrained Scenario with next leader
+                let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                drop(partitions);
+                for &from in other_nodes {
+                    for &to in self.nodes.iter() {
+                        if to != next_leader && to != from {
+                            self.set_partition(from, to, false).await;
+                        }
+                    }
+                }
+                self.set_partition(next_leader, current_leader, false).await;
+                self.send_network_update().await;
+            }
+            "chained" => {
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                drop(partitions);
+                self.set_partition(1, 2, false).await;
+                self.set_partition(1, 3, false).await;
+                self.set_partition(1, 4, false).await;
+                self.set_partition(2, 4, false).await;
+                self.set_partition(2, 5, false).await;
+                self.set_partition(3, 5, false).await;
+                self.send_network_update().await;
+            }
+            "restore" => {
+                let mut partitions = self.partitions.lock().await;
+                partitions.clear();
+                drop(partitions);
+                self.send_network_update().await;
+            }
+            _ => (),
         }
     }
 }

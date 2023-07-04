@@ -11,5 +11,3 @@ pub const UI_MAX_THROUGHPUT_SIZE: usize = 200;
 pub const UI_PROGRESS_BAR_TITLE: &str = "Progress(Finished/Total)";
 pub const UI_BARCHART_WIDTH: u16 = 3;
 pub const UI_BARCHART_GAP: u16 = 1;
-
-
