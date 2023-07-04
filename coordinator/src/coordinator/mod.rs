@@ -285,6 +285,7 @@ impl Coordinator {
                     );
                     tokio::spawn(async move { proposer.run().await });
 
+
                     let op_sockets = self.op_sockets.clone();
                     let io_sender = self.io_sender.clone();
                     let partitions = self.partitions.clone();
@@ -376,6 +377,7 @@ impl Coordinator {
         let mut partitions = self.partitions.lock().await;
         if is_connected {
             partitions.remove(&from_port);
+
             partitions.remove(&to_port);
         } else {
             partitions.insert(from_port);

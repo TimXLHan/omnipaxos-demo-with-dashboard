@@ -48,7 +48,7 @@ pub mod coordinator {
 
 pub mod ui {
     use super::coordinator::APIResponse;
-    use crate::coordinator::{proposal_streamer::ProposalStatus, NetworkState};
+    use crate::coordinator::NetworkState;
 
     #[derive(Debug, Clone)]
     pub enum UIMessage {
@@ -59,7 +59,7 @@ pub mod ui {
         OmnipaxosNodeCrashed(u64),
         ClusterUnreachable,
         NoSuchNode(u64, Vec<u64>),
-        ProposalStatus(ProposalStatus),
+        ProposalStatus(u16),
         Debug(String),
         Exit,
     }

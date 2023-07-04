@@ -17,12 +17,6 @@ use crate::messages::{
 
 const PROPOSE_TICK_RATE: Duration = Duration::from_millis(10);
 
-#[derive(Debug, Clone)]
-pub struct ProposalStatus {
-    currently_queued: usize,
-    batch_total: usize,
-}
-
 pub struct ProposalStreamer {
     io_sender: Sender<IOMessage>,
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
@@ -30,6 +24,7 @@ pub struct ProposalStreamer {
     max_round: Arc<Mutex<Option<Round>>>,
     last_queue_size: usize,
     current_batch_size: usize,
+    currently_batching: bool,
 }
 
 impl ProposalStreamer {
@@ -46,6 +41,7 @@ impl ProposalStreamer {
             max_round,
             last_queue_size: 0,
             current_batch_size: 0,
+            currently_batching: false,
         }
     }
 
@@ -64,6 +60,11 @@ impl ProposalStreamer {
         }
     }
 
+    async fn send_new_batch_size(&self) {
+        self.io_sender.send(IOMessage::UIMessage(UIMessage::ProposalStatus(self.current_batch_size as u16))).await.unwrap();
+        self.io_sender.send(IOMessage::UIMessage(UIMessage::Debug(format!("New batch size: {}", self.current_batch_size)))).await.unwrap();
+    }
+
     pub async fn run(&mut self) {
         let mut propose_interval = tokio::time::interval(PROPOSE_TICK_RATE);
         loop {
@@ -72,20 +73,21 @@ impl ProposalStreamer {
                     let mut queue = self.cmd_queue.lock().await;
                     let mut queue_len = queue.len();
                     if queue_len > self.last_queue_size {
+                        // Must have batched new proposals
                         self.current_batch_size += queue_len - self.last_queue_size;
-                        self.last_queue_size = queue_len;
-                    } else if queue_len == 0 {
-                        self.current_batch_size = 0;
+                        self.currently_batching = true;
+                        self.send_new_batch_size().await;
+                    } else if self.currently_batching && queue_len == 0 {
+                        // Queue just became empty
+                        self.currently_batching = false;
+                        self.current_batch_size = 0; // Signal to UI that batching is "finished"
+                        self.send_new_batch_size().await;
                     }
                     if let Some(cmd) = queue.pop_back() {
                         self.propose_command(cmd).await;
-                        queue_len -= 1
+                        queue_len -= 1;
                     }
-                    let status = ProposalStatus {
-                        currently_queued: queue_len,
-                        batch_total: self.current_batch_size,
-                    };
-                    self.io_sender.send(IOMessage::UIMessage(UIMessage::ProposalStatus(status))).await.unwrap();
+                    self.last_queue_size = queue_len;
                 },
             }
         }
