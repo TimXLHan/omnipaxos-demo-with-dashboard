@@ -2,18 +2,18 @@ use crate::coordinator::NetworkState;
 use crate::messages::coordinator::Round;
 use ratatui::backend::Backend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols::Marker;
 use ratatui::text::{Span, Spans};
 use ratatui::widgets::canvas::{Canvas, Context, Line, Rectangle};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Wrap, BarChart};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Wrap, BarChart, Gauge};
 use ratatui::Frame;
 use std::collections::{HashMap, VecDeque};
 use std::f64::consts::PI;
 use tui_textarea::TextArea;
 
 use crate::ui::ui_app::UIApp;
-use crate::utils::{UI_BARCHART_GAP, UI_BARCHART_WIDTH, UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
+use crate::utils::{UI_BARCHART_GAP, UI_BARCHART_WIDTH, UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_PROGRESS_BAR_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
 
 /// render ui components
 pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
@@ -30,8 +30,10 @@ pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
             [
                 // Title
                 Constraint::Length(3),
-                // Sparkline
+                // Bar Chart
                 Constraint::Length(10),
+                // Progress Bar
+                Constraint::Length(3),
                 // Output & Connection Status
                 Constraint::Min(10),
                 // Input
@@ -54,11 +56,15 @@ pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
     let chart = draw_chart(chart_data);
     rect.render_widget(chart, chunks[1]);
 
+    // Progress Bar
+    let progress_bar = draw_progress_bar(app);
+    rect.render_widget(progress_bar, chunks[2]);
+
     // Output & Status
     let body_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(80), Constraint::Min(20)].as_ref())
-        .split(chunks[2]);
+        .split(chunks[3]);
 
     // Output
     let output = draw_output(app, body_chunks[0].height as i64 - 2);
@@ -100,7 +106,7 @@ pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
     // Input
     let mut textarea = app.input_area.clone();
     let input = draw_input(textarea);
-    rect.render_widget(input.widget(), chunks[3]);
+    rect.render_widget(input.widget(), chunks[4]);
 }
 
 struct CanvasComponents {
@@ -238,6 +244,21 @@ fn draw_chart<'a>(data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
         .bar_gap(UI_BARCHART_GAP)
         .value_style(Style::default().fg(Color::Black).bg(Color::LightGreen))
         .style(Style::default().fg(Color::LightGreen))
+}
+
+fn draw_progress_bar<'a>(app: &UIApp) -> Gauge<'a> {
+    let (progress, total) = app.progress;
+    let label = format!("{}/{}", progress, total);
+    Gauge::default()
+        .block(Block::default().title(UI_PROGRESS_BAR_TITLE).borders(Borders::ALL))
+        .gauge_style(
+            Style::default()
+                .fg(Color::LightGreen)
+                .bg(Color::Black)
+                .add_modifier(Modifier::ITALIC),
+        )
+        .percent(progress  * 100 / total)
+        .label(label)
 }
 
 fn draw_input(mut textarea: TextArea) -> TextArea {

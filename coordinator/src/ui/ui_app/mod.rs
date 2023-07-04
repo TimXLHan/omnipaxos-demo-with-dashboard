@@ -15,6 +15,8 @@ pub struct UIApp<'a> {
     pub network_state: NetworkState,
     pub throughput_data: Vec<(String, u64)>,
     pub decided_idx: u64,
+    // Progress of the batch: (finished, total)
+    pub progress: (u16, u16),
 }
 
 impl<'a> UIApp<'a> {
@@ -27,6 +29,7 @@ impl<'a> UIApp<'a> {
             network_state: Default::default(),
             throughput_data: vec![],
             decided_idx: 0,
+            progress: (89, 166),
         }
     }
 
