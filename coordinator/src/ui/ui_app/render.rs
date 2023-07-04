@@ -248,7 +248,7 @@ fn draw_chart<'a>(data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
 }
 
 fn draw_progress_bar<'a>(app: &UIApp) -> Gauge<'a> {
-    let (progress, total) = app.progress;
+    let (progress, total) = (app.progress.finished, app.progress.total);
     let label = format!("{}/{}", progress, total);
     Gauge::default()
         .block(Block::default().title(UI_PROGRESS_BAR_TITLE).borders(Borders::ALL))
@@ -258,7 +258,7 @@ fn draw_progress_bar<'a>(app: &UIApp) -> Gauge<'a> {
                 .bg(Color::Black)
                 .add_modifier(Modifier::ITALIC),
         )
-        .percent(progress  * 100 / total)
+        .percent(((progress as u64  * 100 / total as u64) as u16).min(100))
         .label(label)
 }
 

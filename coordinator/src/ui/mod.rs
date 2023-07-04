@@ -71,7 +71,10 @@ impl UI {
             }
             UIMessage::OmnipaxosResponse(response) => match response {
                 APIResponse::Decided(idx) => {
-                    self.ui_app.lock().await.decided_idx = idx;
+                    let mut ui_app = self.ui_app.lock().await;
+                    ui_app.progress.finished = (idx - ui_app.progress.starting_idx) as u16;
+
+                    ui_app.decided_idx = idx;
                 }
                 APIResponse::Get(key, value) => {
                     self.ui_app
@@ -104,8 +107,22 @@ impl UI {
                 ));
                 self.update_ui().await;
             }
-            UIMessage::ProposalStatus(status) => {
-                // TODO: handle
+            UIMessage::ProposalStatus(total_batched_num) => {
+                let mut ui_app = self.ui_app.lock().await;
+                // Append log
+                if total_batched_num != 0 {
+                    // Start new batch
+                    if ui_app.progress.is_ongoing == false {
+                        ui_app.progress.is_ongoing = true;
+                        ui_app.progress.total = total_batched_num;
+                        ui_app.progress.starting_idx = ui_app.decided_idx;
+                        ui_app.progress.finished = 0;
+                    } else {
+                        ui_app.progress.total = total_batched_num;
+                    }
+                } else {
+                    ui_app.progress.is_ongoing = false;
+                }
             }
             UIMessage::Debug(string) => {
                 self.ui_app.lock().await.append_log(string);
