@@ -222,16 +222,17 @@ impl UserInputListener {
                         break;
                     }
                     Input { key: Key::Up, .. } => {
-                        self.ui_app.lock().await.scroll -= 1;
+                        let mut ui_app = self.ui_app.lock().await;
+                        if ui_app.scroll > 0 {
+                            ui_app.scroll -= 1;
+                        }
                         self.io_sender
                             .send(IOMessage::UIMessage(UIMessage::UpdateUi))
                             .await
                             .unwrap();
                     }
                     Input { key: Key::Down, .. } => {
-                        let mut ui_app = self.ui_app.lock().await;
-                        let scroll = ui_app.scroll;
-                        ui_app.scroll = (scroll + 1).min(0);
+                        self.ui_app.lock().await.scroll += 1;
                         self.io_sender
                             .send(IOMessage::UIMessage(UIMessage::UpdateUi))
                             .await
