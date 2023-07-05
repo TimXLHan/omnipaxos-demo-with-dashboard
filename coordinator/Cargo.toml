@@ -14,3 +14,7 @@ ratatui = "0.20.1"
 tui-input = "0.7.0"
 tui-textarea = { git = "https://github.com/rhysd/tui-textarea", version = "*", features = ["ratatui-crossterm"], default-features = false }
 chrono = "0.4.24"
+
+[[bin]]
+name = "app"
+path = "src/main.rs"

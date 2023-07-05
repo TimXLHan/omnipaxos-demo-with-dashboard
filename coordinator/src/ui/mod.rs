@@ -178,7 +178,11 @@ impl Ticker {
                     {
                         let mut ui_app = self.ui_app.lock().await;
                         let throughput = (ui_app.decided_idx as f64 - last_decided_idx as f64).max(0.0) as f64 / (UI_TICK_RATE.as_millis() as f64 / 100.0) as f64;
-                        ui_app.throughput_data.insert(0, ("CL".to_string(), throughput as u64));
+                        let round = match ui_app.network_state.max_round {
+                            Some(round) => format!("{}", round.round_num),
+                            None => "0".to_string(),
+                        };
+                        ui_app.throughput_data.insert(0, (round, throughput as u64));
                         if ui_app.throughput_data.len() > UI_MAX_THROUGHPUT_SIZE {
                             ui_app.throughput_data.pop();
                         }
@@ -218,16 +222,17 @@ impl UserInputListener {
                         break;
                     }
                     Input { key: Key::Up, .. } => {
-                        self.ui_app.lock().await.scroll -= 1;
+                        let mut ui_app = self.ui_app.lock().await;
+                        if ui_app.scroll > 0 {
+                            ui_app.scroll -= 1;
+                        }
                         self.io_sender
                             .send(IOMessage::UIMessage(UIMessage::UpdateUi))
                             .await
                             .unwrap();
                     }
                     Input { key: Key::Down, .. } => {
-                        let mut ui_app = self.ui_app.lock().await;
-                        let scroll = ui_app.scroll;
-                        ui_app.scroll = (scroll + 1).min(0);
+                        self.ui_app.lock().await.scroll += 1;
                         self.io_sender
                             .send(IOMessage::UIMessage(UIMessage::UpdateUi))
                             .await
