@@ -40,6 +40,10 @@ impl UI {
 
     pub(crate) async fn handle(&mut self, m: UIMessage) {
         match m {
+            UIMessage::ClearConsole => {
+                self.ui_app.lock().await.clear_logs();
+                self.update_ui().await;
+            }
             UIMessage::Initialize => {
                 self.start().await;
             }
@@ -61,7 +65,7 @@ impl UI {
             UIMessage::OmnipaxosNetworkUpdate(mut network_statue) => {
                 network_statue.nodes.sort();
                 network_statue.alive_nodes.sort();
-                let msg = format!("New network state {:?}", network_statue);
+                let msg = format!("New network state");
                 self.io_sender
                     .send(IOMessage::UIMessage(UIMessage::Debug(msg)))
                     .await
@@ -178,9 +182,13 @@ impl Ticker {
                     {
                         let mut ui_app = self.ui_app.lock().await;
                         let throughput = (ui_app.decided_idx as f64 - last_decided_idx as f64).max(0.0) as f64 / (UI_TICK_RATE.as_millis() as f64 / 100.0) as f64;
-                        let round = match ui_app.network_state.max_round {
+                        let round = if throughput as u64 == 0 {
+                            " ".to_string()
+                        } else {
+                            match ui_app.network_state.max_round {
                             Some(round) => format!("{}", round.round_num),
                             None => "0".to_string(),
+                        }
                         };
                         ui_app.throughput_data.insert(0, (round, throughput as u64));
                         if ui_app.throughput_data.len() > UI_MAX_THROUGHPUT_SIZE {
@@ -223,16 +231,15 @@ impl UserInputListener {
                     }
                     Input { key: Key::Up, .. } => {
                         let mut ui_app = self.ui_app.lock().await;
-                        if ui_app.scroll > 0 {
-                            ui_app.scroll -= 1;
-                        }
+                        ui_app.scroll -= 1;
                         self.io_sender
                             .send(IOMessage::UIMessage(UIMessage::UpdateUi))
                             .await
                             .unwrap();
                     }
                     Input { key: Key::Down, .. } => {
-                        self.ui_app.lock().await.scroll += 1;
+                        let mut ui_app = self.ui_app.lock().await;
+                        ui_app.scroll = (ui_app.scroll + 1).min(0);
                         self.io_sender
                             .send(IOMessage::UIMessage(UIMessage::UpdateUi))
                             .await
@@ -260,6 +267,7 @@ impl UserInputListener {
                         }
                         ui_app.input_area.delete_line_by_head();
                         ui_app.input_area.delete_line_by_end();
+                        ui_app.scroll = 0;
                         self.io_sender
                             .send(IOMessage::UIMessage(UIMessage::UpdateUi))
                             .await
