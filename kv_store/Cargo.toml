@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 # omnipaxos = { version = "0.2.0", features = ["serde", "macros"] }
-omnipaxos = { git = "https://github.com/kevin-harrison/omnipaxos", branch = "sync-test", features = ["serde", "macros"] }
-omnipaxos_storage = { git = "https://github.com/kevin-harrison/omnipaxos", branch = "sync-test" }
+omnipaxos = { version = "0.2.1", features = ["serde", "macros"] }
+omnipaxos_storage = "0.2.1"
 # omnipaxos_storage = "0.2.0"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "io-util", "time"] }
 serde = { version = "1.0", features = ["derive"] }
