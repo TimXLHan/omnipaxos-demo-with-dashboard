@@ -5,6 +5,7 @@ use crate::messages::coordinator::{CDMessage, KVCommand};
 use crate::messages::IOMessage;
 use chrono::{DateTime, Utc};
 use tokio::sync::mpsc::Sender;
+use crate::messages::ui::UIMessage;
 
 pub struct CLIHandler {
     io_sender: Sender<IOMessage>,
@@ -33,7 +34,7 @@ impl CLIHandler {
 }
 
 const INVALID_COMMAND: &str =
-    "Invalid command: valid commands are put/get/delete/connection/batch/scenario";
+    "Valid commands are put/get/delete/connection/batch/scenario/clear";
 const INVALID_DELETE: &str = "Invalid command, format is: delete <key-to-delete>";
 const INVALID_GET: &str = "Invalid command, format is: get <key-to-get>";
 const INVALID_PUT: &str = "Invalid command, format is: put <key> <value>";
@@ -61,6 +62,7 @@ fn parse_command(line: String) -> Result<IOMessage, ParseCommandError> {
         .ok_or(ParseCommandError(INVALID_COMMAND.to_string()))?;
 
     let command = match command_type {
+        "clear" => IOMessage::UIMessage(UIMessage::ClearConsole),
         "delete" => {
             let value = words
                 .next()

@@ -10,6 +10,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Wrap, B
 use ratatui::Frame;
 use std::collections::{HashMap, VecDeque};
 use std::f64::consts::PI;
+use std::fmt::format;
 use tui_textarea::TextArea;
 
 use crate::ui::ui_app::UIApp;
@@ -44,7 +45,7 @@ where
         .split(size);
 
     // Title
-    let title = draw_title();
+    let title = draw_title(app);
     rect.render_widget(title, chunks[0]);
 
     // Chart
@@ -68,7 +69,7 @@ where
         .split(chunks[3]);
 
     // Output
-    let output = draw_output(app, body_chunks[0].height as i64 - 2);
+    let output = draw_output(app, body_chunks[0].height as i64 - 2, body_chunks[0].width as i64);
     rect.render_widget(output, body_chunks[0]);
 
     let canvas_node = Canvas::default()
@@ -168,7 +169,7 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
                     y1: current_rect.y + current_rect.height / 2.0,
                     x2: next_rect.x + next_rect.width / 2.0,
                     y2: next_rect.y + next_rect.height / 2.0,
-                    color: Color::LightBlue,
+                    color: Color::LightCyan,
                 };
                 lines.insert((i as u64, j as u64), line);
             }
@@ -221,7 +222,7 @@ fn draw_connection_status(data: &Rectangle) -> Canvas<'static, fn(&mut Context)>
         })
 }
 
-fn draw_title<'a>() -> Paragraph<'a> {
+fn draw_title<'a>(app: &UIApp ) -> Paragraph<'a> {
     Paragraph::new(UI_TITLE)
         .style(Style::default().fg(Color::LightCyan))
         .alignment(Alignment::Center)
@@ -279,7 +280,8 @@ fn draw_input(mut textarea: TextArea) -> TextArea {
     textarea
 }
 
-fn draw_output<'a>(app: &UIApp, block_height: i64) -> Paragraph<'a> {
+fn draw_output<'a>(app: &UIApp, block_height: i64, block_width: i64) -> Paragraph<'a> {
+    // let logs = reformat_output(app.get_logs(), block_width as u64);
     let logs = app.get_logs();
     let log_len = logs.len();
     Paragraph::new(
@@ -289,8 +291,7 @@ fn draw_output<'a>(app: &UIApp, block_height: i64) -> Paragraph<'a> {
     )
     .style(Style::default().fg(Color::LightCyan))
     .alignment(Alignment::Left)
-    .wrap(Wrap { trim: true })
-    .scroll((
+        .scroll((
         (log_len as i64 - block_height + app.scroll).max(0) as u16,
         0,
     ))
@@ -303,3 +304,32 @@ fn draw_output<'a>(app: &UIApp, block_height: i64) -> Paragraph<'a> {
             .title(UI_OUTPUT_AREA_TITLE),
     )
 }
+
+
+// FIXME: This is a temporary solution to the problem of long lines in the output area.
+fn reformat_output(logs: Vec<String>, block_width: u64) -> Vec<String> {
+    let mut result = Vec::new();
+    for log in logs {
+        let mut lines = log.split('\n').collect::<Vec<_>>();
+        for line in lines.iter_mut() {
+            let mut chunks = split_string_by_length(line, block_width as usize);
+            result.append(&mut chunks);
+        }
+    }
+    result
+}
+
+fn split_string_by_length(input: &str, length: usize) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut remaining = input;
+
+    while !remaining.is_empty() {
+        let end_index = std::cmp::min(length, remaining.len());
+        let chunk = remaining[..end_index].to_owned();
+        result.push(chunk.clone());
+        remaining = &remaining[end_index..];
+    }
+
+    result
+}
+

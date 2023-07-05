@@ -52,6 +52,7 @@ pub mod ui {
 
     #[derive(Debug, Clone)]
     pub enum UIMessage {
+        ClearConsole,
         Initialize, // Launch to initialize the application
         UpdateUi,
         OmnipaxosResponse(APIResponse),

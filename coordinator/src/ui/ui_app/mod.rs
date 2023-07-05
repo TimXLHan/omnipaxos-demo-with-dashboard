@@ -53,4 +53,8 @@ impl<'a> UIApp<'a> {
     pub fn get_logs(&self) -> Vec<String> {
         self.logs.clone()
     }
+
+    pub fn clear_logs(&mut self) {
+        self.logs.clear();
+    }
 }
