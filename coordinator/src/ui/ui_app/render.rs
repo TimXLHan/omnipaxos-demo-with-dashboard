@@ -49,6 +49,19 @@ where
     rect.render_widget(title, chunks[0]);
 
     // Chart
+    // let tooltip =     Canvas::default()
+    //     .block(Block::default().borders(Borders::ALL).title("World"))
+    //     .paint(|ctx| {
+    //         ctx.print(
+    //             0.0,
+    //             0.0,
+    //             Span::styled("You are here", Style::default().fg(Color::Yellow)),
+    //         );
+    //     })
+    //     .x_bounds([0.0, 100.0])
+    //     .y_bounds([0.0, 100.0]);
+    // rect.render_widget(tooltip, chunks[1]);
+
     let chart_data: &Vec<(&str, u64)> = &app
         .throughput_data
         .iter()

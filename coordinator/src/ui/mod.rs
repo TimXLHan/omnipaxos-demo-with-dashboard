@@ -65,11 +65,6 @@ impl UI {
             UIMessage::OmnipaxosNetworkUpdate(mut network_statue) => {
                 network_statue.nodes.sort();
                 network_statue.alive_nodes.sort();
-                let msg = format!("New network state");
-                self.io_sender
-                    .send(IOMessage::UIMessage(UIMessage::Debug(msg)))
-                    .await
-                    .unwrap();
                 self.ui_app.lock().await.network_state = network_statue;
                 self.update_ui().await;
             }
