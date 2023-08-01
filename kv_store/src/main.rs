@@ -61,9 +61,10 @@ async fn main() {
         server_config,
         cluster_config,
     };
-    let omni_paxos = op_config
+    let mut omni_paxos = op_config
         .build(MemoryStorage::default())
         .expect("failed to build OmniPaxos");
+    omni_paxos.start_ui();
     let mut server = Server {
         omni_paxos,
         network: network::Network::new().await,
