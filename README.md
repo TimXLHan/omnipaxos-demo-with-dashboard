@@ -12,3 +12,9 @@ Attach to network-actor to give commands to the cluster:
 ```bash
 $ docker attach coordinator
 ```
+
+Attach to kv_store with build-in dashboard for omnipaoxs.
+
+```bash
+$ docker attach s1
+```
