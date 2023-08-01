@@ -46,6 +46,9 @@ services:
       PID: 1
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true
+
 
   s2:
     build: kv_store/
@@ -56,6 +59,8 @@ services:
       PID: 2
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true
 
   s3:
     build: kv_store/
@@ -67,6 +72,8 @@ services:
       PID: 3
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true
 
   s4:
     build: kv_store/
@@ -77,6 +84,8 @@ services:
       PID: 4
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true
 
   s5:
     build: kv_store/
@@ -87,3 +96,5 @@ services:
       PID: 5
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true
