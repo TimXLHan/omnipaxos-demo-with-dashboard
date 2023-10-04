@@ -64,7 +64,6 @@ async fn main() {
     let mut omni_paxos = op_config
         .build(MemoryStorage::default())
         .expect("failed to build OmniPaxos");
-    omni_paxos.start_ui();
     let mut server = Server {
         omni_paxos,
         network: network::Network::new().await,
