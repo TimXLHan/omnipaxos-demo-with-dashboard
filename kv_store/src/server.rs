@@ -8,6 +8,7 @@ use omnipaxos::ballot_leader_election::Ballot;
 use omnipaxos::util::LogEntry;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use omnipaxos_ui::OmniPaxosUI;
 use tokio::time;
 
 #[derive(Clone, Copy, Eq, Debug, Ord, PartialOrd, PartialEq, Serialize, Deserialize)]
@@ -34,6 +35,7 @@ pub enum APIResponse {
 }
 
 pub struct Server {
+    pub omni_paxos_ui: OmniPaxosUI,
     pub omni_paxos: OmniPaxosKV,
     pub network: Network,
     pub database: Database,
@@ -124,6 +126,7 @@ impl Server {
                 },
                 _ = tick_interval.tick() => {
                     self.omni_paxos.tick();
+                    self.omni_paxos_ui.tick(self.omni_paxos.get_ui_states());
                 },
                 else => (),
             }

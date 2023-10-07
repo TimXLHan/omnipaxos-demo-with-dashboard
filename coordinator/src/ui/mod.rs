@@ -13,7 +13,7 @@ use crate::messages::coordinator::APIResponse;
 use crate::messages::{ui::UIMessage, IOMessage};
 use crate::ui::ui_app::cli::CLIHandler;
 use crate::ui::ui_app::render::render;
-use crate::ui::ui_app::UIApp;
+use crate::ui::ui_app::{Node, UIApp};
 use crate::utils::{UI_MAX_THROUGHPUT_SIZE, UI_TICK_RATE};
 
 mod ui_app;
@@ -65,7 +65,7 @@ impl UI {
             UIMessage::OmnipaxosNetworkUpdate(mut network_statue) => {
                 network_statue.nodes.sort();
                 network_statue.alive_nodes.sort();
-                self.ui_app.lock().await.network_state = network_statue;
+                self.ui_app.lock().await.set_network_state(network_statue);
                 self.update_ui().await;
             }
             UIMessage::OmnipaxosResponse(response) => match response {
@@ -176,7 +176,7 @@ impl Ticker {
                 _ = ui_interval.tick() => {
                     {
                         let mut ui_app = self.ui_app.lock().await;
-                        let throughput = (ui_app.decided_idx as f64 - last_decided_idx as f64).max(0.0) as f64 / (UI_TICK_RATE.as_millis() as f64 / 100.0) as f64;
+                        let throughput = (ui_app.decided_idx - last_decided_idx) as f64;
                         let round = if throughput as u64 == 0 {
                             " ".to_string()
                         } else {
@@ -189,6 +189,7 @@ impl Ticker {
                         if ui_app.throughput_data.len() > UI_MAX_THROUGHPUT_SIZE {
                             ui_app.throughput_data.pop();
                         }
+                        ui_app.dps = throughput / UI_TICK_RATE.as_secs_f64();
                         last_decided_idx = ui_app.decided_idx;
                     }
                     self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
