@@ -3,6 +3,7 @@ use crate::server::Server;
 use omnipaxos::{*, util::FlexibleQuorum};
 use omnipaxos_storage::memory_storage::MemoryStorage;
 use std::env;
+use omnipaxos_ui::OmniPaxosUI;
 use tokio;
 
 #[macro_use]
@@ -61,10 +62,13 @@ async fn main() {
         server_config,
         cluster_config,
     };
+    let mut  omni_paxos_ui = OmniPaxosUI::with(op_config.clone().into());
+    omni_paxos_ui.start();
     let mut omni_paxos = op_config
         .build(MemoryStorage::default())
         .expect("failed to build OmniPaxos");
     let mut server = Server {
+        omni_paxos_ui,
         omni_paxos,
         network: network::Network::new().await,
         database: database::Database::new(format!("db_{}", *PID).as_str()),
