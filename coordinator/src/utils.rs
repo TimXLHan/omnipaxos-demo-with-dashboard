@@ -13,14 +13,16 @@ pub const UI_PROGRESS_BAR_TITLE: &str = "Progress(Finished/Total)";
 pub const UI_BARCHART_WIDTH: u16 = 3;
 pub const UI_BARCHART_GAP: u16 = 1;
 pub const UI_LEADER_RECT_COLOR: Color = Color::Green;
-pub(crate) const COLORS: [Color; 9] = [
+pub const ORANGE: Color = Color::Indexed(208);
+pub const PINK: Color = Color::Indexed(211);
+
+pub(crate) const COLORS: [Color; 8] = [
     Color::Green,
     Color::Blue,
-    Color::Indexed(27), // Blue
-    Color::Cyan,
-    Color::Yellow,
-    Color::Indexed(211), // Pink
-    Color::Indexed(208), // Orange
-    Color::Magenta,
     Color::Red,
+    ORANGE,
+    Color::Cyan,
+    Color::Magenta,
+    Color::Yellow,
+    PINK,
 ];
