@@ -78,10 +78,10 @@ impl<'a> UIApp<'a> {
     pub fn set_network_state(&mut self, network_state: NetworkState) {
         // set up nodes if first time
         if self.nodes.is_empty() {
-            for &pid in network_state.nodes.iter() {
+            for (idx, &pid) in network_state.nodes.iter().enumerate() {
                 self.nodes.push(Node {
                     pid,
-                    color: COLORS[pid as usize % COLORS.len()],
+                    color: COLORS[idx % COLORS.len()],
                 });
             }
         }

@@ -18,9 +18,9 @@ pub(crate) const COLORS: [Color; 9] = [
     Color::Blue,
     Color::Indexed(27), // Blue
     Color::Cyan,
-    Color::Magenta,
-    Color::Indexed(211), // Pink
-    Color::Red,
     Color::Yellow,
+    Color::Indexed(211), // Pink
     Color::Indexed(208), // Orange
+    Color::Magenta,
+    Color::Red,
 ];

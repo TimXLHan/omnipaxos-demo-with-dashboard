@@ -172,7 +172,7 @@ fn make_canvas(app: &UIApp) -> CanvasComponents {
         let rect = Rectangle {
             x,
             y,
-            width: node_width,
+            width: node_width * 2.0,
             height: node_width,
             color,
         };
