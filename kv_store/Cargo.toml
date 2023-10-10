@@ -7,9 +7,9 @@ edition = "2021"
 
 [dependencies]
 # omnipaxos = { version = "0.2.0", features = ["serde", "macros"] }
-omnipaxos_ui = { git = "https://github.com/haraldng/omnipaxos.git", branch = "master"}
-omnipaxos = { git = "https://github.com/haraldng/omnipaxos.git", branch = "master", features = ["serde", "macros"] }
-omnipaxos_storage = { git = 'https://github.com/haraldng/omnipaxos.git', branch = "master"  }
+omnipaxos_ui = { git = "https://github.com/haraldng/omnipaxos.git", rev = "291dd87"}
+omnipaxos = { git = "https://github.com/haraldng/omnipaxos.git", rev = "291dd87", features = ["serde", "macros"] }
+omnipaxos_storage = { git = 'https://github.com/haraldng/omnipaxos.git', rev = "291dd87" }
 # omnipaxos_storage = "0.2.0"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "net", "io-util", "time"] }
 serde = { version = "1.0", features = ["derive"] }

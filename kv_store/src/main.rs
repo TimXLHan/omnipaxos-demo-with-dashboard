@@ -63,9 +63,9 @@ async fn main() {
         server_config,
         cluster_config,
     };
-    let mut  omni_paxos_ui = OmniPaxosUI::with(op_config.clone().into());
+    let mut omni_paxos_ui = OmniPaxosUI::with(op_config.clone().into());
     omni_paxos_ui.start();
-    let mut omni_paxos = op_config
+    let omni_paxos = op_config
         .build(MemoryStorage::default())
         .expect("failed to build OmniPaxos");
     let mut server = Server {
