@@ -8,6 +8,7 @@ use tui_textarea::{Input, Key};
 
 use std::io::stdout;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::messages::coordinator::APIResponse;
 use crate::messages::{ui::UIMessage, IOMessage};
@@ -189,8 +190,14 @@ impl Ticker {
                         if ui_app.throughput_data.len() > UI_MAX_THROUGHPUT_SIZE {
                             ui_app.throughput_data.pop();
                         }
-                        ui_app.dps = throughput / UI_TICK_RATE.as_secs_f64();
                         last_decided_idx = ui_app.decided_idx;
+                        // Update dps
+                        ui_app.last_dps += throughput as u64;
+                        if ui_app.last_dps_update_time.elapsed() > std::time::Duration::from_secs(1) {
+                            ui_app.last_dps_update_time = Instant::now();
+                            ui_app.dps = ui_app.last_dps as f64;
+                            ui_app.last_dps = 0;
+                        }
                     }
                     self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
                 }

@@ -38,6 +38,8 @@ pub struct UIApp<'a> {
     pub nodes: Vec<Node>,
     pub leader: Option<Node>,
     pub(crate) dps: f64,
+    pub(crate) last_dps_update_time: Instant,
+    pub(crate) last_dps: u64,
 }
 
 impl<'a> UIApp<'a> {
@@ -60,6 +62,8 @@ impl<'a> UIApp<'a> {
             nodes: vec![],
             leader: None,
             dps: 0.0,
+            last_dps_update_time: Instant::now(),
+            last_dps: 0,
         }
     }
 

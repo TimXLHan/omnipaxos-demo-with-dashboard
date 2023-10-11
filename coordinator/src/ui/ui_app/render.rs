@@ -158,7 +158,7 @@ fn make_canvas(app: &UIApp) -> CanvasComponents {
     let angle_step = 2.0 * PI / (num_of_nodes as f64); // Angle increment between each rectangle
     let mut nodes_with_rects = HashMap::new();
 
-    // Nodes
+    // Rectangles, but only shows the leader
     for i in 0..num_of_nodes {
         let angle = i as f64 * angle_step;
         let x = center_x + radius * angle.cos();
@@ -207,7 +207,7 @@ fn make_canvas(app: &UIApp) -> CanvasComponents {
         let node = app.nodes.iter().find(|node| node.pid == *node_id).unwrap();
         let label = Label {
             x: rect.x + rect.width / 4.0,
-            y: rect.y + rect.width / 3.0,
+            y: rect.y + rect.width / 6.0,
             span: Span::styled(
                 String::from(" Node".to_string() + &*node_id.to_string() + " "),
                 Style::default().fg(Color::White).bold().bg(node.color),
