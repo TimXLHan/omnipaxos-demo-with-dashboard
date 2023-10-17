@@ -6,10 +6,12 @@ use crate::{
 };
 use omnipaxos::ballot_leader_election::Ballot;
 use omnipaxos::util::LogEntry;
+use omnipaxos_ui::OmniPaxosUI;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use omnipaxos_ui::OmniPaxosUI;
 use tokio::time;
+
+const SNAPSHOT_IDX: u64 = 10000;
 
 #[derive(Clone, Copy, Eq, Debug, Ord, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub struct Round {
@@ -84,6 +86,13 @@ impl Server {
                 .read_decided_suffix(self.last_decided_idx)
                 .unwrap();
             self.update_database(decided_entries);
+            if new_decided_idx % SNAPSHOT_IDX == 0
+                || new_decided_idx - self.last_decided_idx > SNAPSHOT_IDX
+            {
+                self.omni_paxos
+                    .snapshot(Some(new_decided_idx), true)
+                    .expect("Failed to snapshot");
+            }
             self.last_decided_idx = new_decided_idx;
             /*** reply client ***/
             let msg = Message::APIResponse(APIResponse::Decided(new_decided_idx));

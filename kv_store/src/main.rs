@@ -1,9 +1,9 @@
 use crate::kv::KVCommand;
 use crate::server::Server;
-use omnipaxos::{*, util::FlexibleQuorum};
+use omnipaxos::{util::FlexibleQuorum, *};
 use omnipaxos_storage::memory_storage::MemoryStorage;
-use std::env;
 use omnipaxos_ui::OmniPaxosUI;
+use std::env;
 use tokio;
 
 #[macro_use]
