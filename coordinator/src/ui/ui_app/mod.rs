@@ -1,10 +1,10 @@
-use std::time::Instant;
-use ratatui::style::Color;
 use crate::coordinator::NetworkState;
 use crate::messages::IOMessage;
+use crate::utils::COLORS;
+use ratatui::style::Color;
+use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 use tui_textarea::TextArea;
-use crate::utils::COLORS;
 
 pub mod cli;
 pub mod render;
@@ -91,7 +91,11 @@ impl<'a> UIApp<'a> {
         }
         // set leader
         if let Some(round) = network_state.max_round {
-            let leader_node  = self.nodes.iter().find(|node| node.pid == round.leader).unwrap();
+            let leader_node = self
+                .nodes
+                .iter()
+                .find(|node| node.pid == round.leader)
+                .unwrap();
             self.leader = Some(leader_node.clone());
         }
         self.network_state = network_state;

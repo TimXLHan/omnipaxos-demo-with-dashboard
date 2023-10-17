@@ -2,10 +2,10 @@ use std::fmt;
 
 use crate::coordinator::KeyValue;
 use crate::messages::coordinator::{CDMessage, KVCommand};
+use crate::messages::ui::UIMessage;
 use crate::messages::IOMessage;
 use chrono::{DateTime, Utc};
 use tokio::sync::mpsc::Sender;
-use crate::messages::ui::UIMessage;
 
 pub struct CLIHandler {
     io_sender: Sender<IOMessage>,
@@ -33,8 +33,7 @@ impl CLIHandler {
     }
 }
 
-const INVALID_COMMAND: &str =
-    "Valid commands are put/get/delete/connection/batch/scenario/clear";
+const INVALID_COMMAND: &str = "Valid commands are put/get/delete/connection/batch/scenario/clear";
 const INVALID_DELETE: &str = "Invalid command, format is: delete <key-to-delete>";
 const INVALID_GET: &str = "Invalid command, format is: get <key-to-get>";
 const INVALID_PUT: &str = "Invalid command, format is: put <key> <value>";

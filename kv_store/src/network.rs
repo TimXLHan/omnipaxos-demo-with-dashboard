@@ -1,6 +1,6 @@
 use omnipaxos::messages::Message as OPMessage;
 use serde::{Deserialize, Serialize};
-use serde_json;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::{
@@ -90,7 +90,7 @@ impl Network {
 
         let mut sockets = HashMap::new();
         for peer in &peers {
-            let addr = peer_addrs.get(&peer).unwrap().clone();
+            let addr = peer_addrs.get(peer).unwrap().clone();
             let stream = TcpStream::connect(addr).await.unwrap();
             let (reader, writer) = stream.into_split();
             sockets.insert(*peer, writer);

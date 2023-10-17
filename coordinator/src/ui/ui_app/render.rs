@@ -1,22 +1,27 @@
 use crate::coordinator::NetworkState;
 use crate::messages::coordinator::Round;
 use ratatui::backend::Backend;
+use ratatui::symbols::Marker;
+use ratatui::text::{Span, Spans};
+use ratatui::widgets::canvas::{Canvas, Context, Rectangle};
+use ratatui::widgets::{
+    block::Block, BarChart, BorderType, Borders, Gauge, Paragraph, Sparkline, Wrap,
+};
+use ratatui::Frame;
 use ratatui::{
     prelude::*,
     widgets::{block::Title, *},
 };
-use ratatui::symbols::Marker;
-use ratatui::text::{Span, Spans};
-use ratatui::widgets::canvas::{Canvas, Context, Rectangle};
-use ratatui::widgets::{block::Block, BorderType, Borders, Paragraph, Sparkline, Wrap, BarChart, Gauge};
-use ratatui::Frame;
 use std::collections::{HashMap, VecDeque};
 use std::f64::consts::PI;
 use std::fmt::format;
 use tui_textarea::TextArea;
 
 use crate::ui::ui_app::UIApp;
-use crate::utils::{UI_BARCHART_GAP, UI_BARCHART_WIDTH, UI_INPUT_AREA_TITLE, UI_LEADER_RECT_COLOR, UI_OUTPUT_AREA_TITLE, UI_PROGRESS_BAR_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
+use crate::utils::{
+    UI_BARCHART_GAP, UI_BARCHART_WIDTH, UI_INPUT_AREA_TITLE, UI_LEADER_RECT_COLOR,
+    UI_OUTPUT_AREA_TITLE, UI_PROGRESS_BAR_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE,
+};
 
 /// render ui components
 pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
@@ -70,7 +75,7 @@ where
         .take(window_width / (UI_BARCHART_WIDTH + UI_BARCHART_GAP) as usize)
         .map(|(s, num)| (s.as_str(), *num))
         .collect::<Vec<(&str, u64)>>();
-    let chart = draw_chart(app ,chart_data);
+    let chart = draw_chart(app, chart_data);
     rect.render_widget(chart, chunks[1]);
 
     // Progress Bar
@@ -84,7 +89,11 @@ where
         .split(chunks[3]);
 
     // Output
-    let output = draw_output(app, body_chunks[0].height as i64 - 2, body_chunks[0].width as i64);
+    let output = draw_output(
+        app,
+        body_chunks[0].height as i64 - 2,
+        body_chunks[0].width as i64,
+    );
     rect.render_widget(output, body_chunks[0]);
 
     let canvas_node = Canvas::default()
@@ -223,7 +232,7 @@ fn make_canvas(app: &UIApp) -> CanvasComponents {
     }
 }
 
-fn draw_title<'a>(app: &UIApp ) -> Paragraph<'a> {
+fn draw_title<'a>(app: &UIApp) -> Paragraph<'a> {
     Paragraph::new(UI_TITLE)
         .style(Style::default().fg(Color::LightCyan))
         .alignment(Alignment::Center)
@@ -252,11 +261,7 @@ fn draw_chart<'a>(app: &UIApp, data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
         ),
     ]));
     BarChart::default()
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL),
-        )
+        .block(Block::default().title(title).borders(Borders::ALL))
         .data(data)
         .bar_width(UI_BARCHART_WIDTH)
         .bar_gap(UI_BARCHART_GAP)
@@ -274,14 +279,18 @@ fn draw_progress_bar<'a>(app: &UIApp) -> Gauge<'a> {
         Color::Gray
     };
     Gauge::default()
-        .block(Block::default().title(UI_PROGRESS_BAR_TITLE).borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(UI_PROGRESS_BAR_TITLE)
+                .borders(Borders::ALL),
+        )
         .gauge_style(
             Style::default()
                 .fg(bar_color)
                 .bg(Color::Black)
                 .add_modifier(Modifier::ITALIC),
         )
-        .percent(((progress as u64  * 100 / total as u64) as u16).min(100))
+        .percent(((progress as u64 * 100 / total as u64) as u16).min(100))
         .label(label)
 }
 
@@ -307,7 +316,7 @@ fn draw_output<'a>(app: &UIApp, block_height: i64, block_width: i64) -> Paragrap
     )
     .style(Style::default().fg(Color::LightCyan))
     .alignment(Alignment::Left)
-        .scroll((
+    .scroll((
         (log_len as i64 - block_height + app.scroll).max(0) as u16,
         0,
     ))
@@ -320,7 +329,6 @@ fn draw_output<'a>(app: &UIApp, block_height: i64, block_width: i64) -> Paragrap
             .title(UI_OUTPUT_AREA_TITLE),
     )
 }
-
 
 // FIXME: This is a temporary solution to the problem of long lines in the output area.
 fn reformat_output(logs: Vec<String>, block_width: u64) -> Vec<String> {
@@ -348,4 +356,3 @@ fn split_string_by_length(input: &str, length: usize) -> Vec<String> {
 
     result
 }
-

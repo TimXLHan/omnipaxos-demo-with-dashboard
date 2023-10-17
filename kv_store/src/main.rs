@@ -4,7 +4,7 @@ use omnipaxos::{util::FlexibleQuorum, *};
 use omnipaxos_storage::memory_storage::MemoryStorage;
 use omnipaxos_ui::OmniPaxosUI;
 use std::env;
-use tokio;
+
 
 #[macro_use]
 extern crate lazy_static;
@@ -57,7 +57,7 @@ async fn main() {
     let cluster_config = ClusterConfig {
         configuration_id: 1,
         nodes: (*NODES).clone(),
-        flexible_quorum: FLEX_QUORUM.clone(),
+        flexible_quorum: *FLEX_QUORUM,
     };
     let op_config = OmniPaxosConfig {
         server_config,

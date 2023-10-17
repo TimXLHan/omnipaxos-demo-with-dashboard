@@ -285,7 +285,6 @@ impl Coordinator {
                     );
                     tokio::spawn(async move { proposer.run().await });
 
-
                     let op_sockets = self.op_sockets.clone();
                     let io_sender = self.io_sender.clone();
                     let partitions = self.partitions.clone();
