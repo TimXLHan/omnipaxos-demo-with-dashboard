@@ -270,8 +270,15 @@ fn draw_chart<'a>(app: &UIApp, data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
         .bar_style(Style::default().fg(leader.color))
 }
 fn draw_progress_bar<'a>(app: &UIApp) -> Gauge<'a> {
-    let (progress, total) = (app.progress.finished, app.progress.total);
-    let label = format!("{}/{}", progress, total);
+    let (progress, total, label) = {
+        let (prog, tot) = (app.progress.finished, app.progress.total);
+        if tot > 0 {
+            let label = format!("{}/{}", prog, tot);
+            (prog, tot, label)
+        } else {
+            (1, 1, "N/A".to_string())
+        }
+    };
     let is_ongoing = app.progress.is_ongoing;
     let bar_color = if is_ongoing {
         Color::LightGreen
