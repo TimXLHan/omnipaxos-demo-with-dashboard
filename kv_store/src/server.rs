@@ -10,6 +10,7 @@ use omnipaxos_ui::OmniPaxosUI;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time;
+use crate::network::CLIENT_PID;
 
 const SNAPSHOT_IDX: u64 = 10000;
 
@@ -54,7 +55,7 @@ impl Server {
                     KVCommand::Get(key) => {
                         let value = self.database.handle_command(KVCommand::Get(key.clone()));
                         let msg = Message::APIResponse(APIResponse::Get(key, value));
-                        self.network.send(0, msg).await;
+                        self.network.send(CLIENT_PID, msg).await;
                     }
                     cmd => {
                         self.omni_paxos.append(cmd).unwrap();
@@ -96,7 +97,7 @@ impl Server {
             self.last_decided_idx = new_decided_idx;
             /*** reply client ***/
             let msg = Message::APIResponse(APIResponse::Decided(new_decided_idx));
-            self.network.send(0, msg).await
+            self.network.send(CLIENT_PID, msg).await
         }
     }
 
@@ -106,7 +107,7 @@ impl Server {
         if self.last_sent_leader != new_ballot {
             self.last_sent_leader = new_ballot;
             let msg = Message::APIResponse(APIResponse::NewRound(new_ballot.map(|b| b.into())));
-            self.network.send(0, msg).await;
+            self.network.send(CLIENT_PID, msg).await;
         }
     }
 

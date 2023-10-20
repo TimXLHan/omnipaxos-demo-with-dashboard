@@ -10,6 +10,7 @@ use tokio::{
 };
 
 use crate::{kv::KVCommand, server::APIResponse, NODES, PID as MY_PID};
+pub(crate) const CLIENT_PID: u64 = 0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum Message {
@@ -36,7 +37,7 @@ impl Network {
     /// Sends the message to the receiver.
     /// NodeId 0 is the Client.
     pub(crate) async fn send(&mut self, receiver: u64, msg: Message) {
-        let writer = if receiver == 0 {
+        let writer = if receiver == CLIENT_PID {
             self.api_socket.as_mut()
         } else {
             self.sockets.get_mut(&receiver)

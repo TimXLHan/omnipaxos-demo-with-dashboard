@@ -57,8 +57,8 @@ impl<'a> UIApp<'a> {
             progress: Progress {
                 starting_idx: 0,
                 is_ongoing: false,
-                finished: 100,
-                total: 100,
+                finished: 0,
+                total: 0,
             },
             nodes: vec![],
             leader: None,
