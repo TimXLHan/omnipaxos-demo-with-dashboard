@@ -12,8 +12,8 @@ pub mod render;
 pub struct Progress {
     pub starting_idx: u64,
     pub is_ongoing: bool,
-    pub finished: u16,
-    pub total: u16,
+    pub finished: u64,
+    pub total: u64,
 }
 
 /// Basic information of a node.
@@ -25,6 +25,7 @@ pub struct Node {
 
 /// The ui application, containing the ui state
 pub struct UIApp<'a> {
+    #[allow(dead_code)]
     io_sender: Sender<IOMessage>,
     logs: Vec<String>,
     pub scroll: i64,

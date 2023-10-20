@@ -14,7 +14,7 @@ use crate::messages::coordinator::APIResponse;
 use crate::messages::{ui::UIMessage, IOMessage};
 use crate::ui::ui_app::cli::CLIHandler;
 use crate::ui::ui_app::render::render;
-use crate::ui::ui_app::{Node, UIApp};
+use crate::ui::ui_app::{UIApp};
 use crate::utils::{UI_MAX_THROUGHPUT_SIZE, UI_TICK_RATE};
 
 mod ui_app;
@@ -72,7 +72,7 @@ impl UI {
             UIMessage::OmnipaxosResponse(response) => match response {
                 APIResponse::Decided(idx) => {
                     let mut ui_app = self.ui_app.lock().await;
-                    ui_app.progress.finished = (idx - ui_app.progress.starting_idx) as u16;
+                    ui_app.progress.finished = idx - ui_app.progress.starting_idx;
 
                     ui_app.decided_idx = idx;
                 }
@@ -112,7 +112,7 @@ impl UI {
                 // Append log
                 if total_batched_num != 0 {
                     // Start new batch
-                    if ui_app.progress.is_ongoing == false {
+                    if !ui_app.progress.is_ongoing {
                         ui_app.progress.is_ongoing = true;
                         ui_app.progress.total = total_batched_num;
                         ui_app.progress.starting_idx = ui_app.decided_idx;

@@ -63,7 +63,7 @@ impl ProposalStreamer {
     async fn send_new_batch_size(&self) {
         self.io_sender
             .send(IOMessage::UIMessage(UIMessage::ProposalStatus(
-                self.current_batch_size as u16,
+                self.current_batch_size as u64,
             )))
             .await
             .unwrap();

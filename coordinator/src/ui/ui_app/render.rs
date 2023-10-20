@@ -1,20 +1,20 @@
-use crate::coordinator::NetworkState;
+
 use crate::messages::coordinator::Round;
 use ratatui::backend::Backend;
 use ratatui::symbols::Marker;
-use ratatui::text::{Span, Spans};
-use ratatui::widgets::canvas::{Canvas, Context, Rectangle};
+use ratatui::text::{Span, Line};
+use ratatui::widgets::canvas::{Canvas, Rectangle};
 use ratatui::widgets::{
-    block::Block, BarChart, BorderType, Borders, Gauge, Paragraph, Sparkline, Wrap,
+    block::Block, BarChart, BorderType, Borders, Gauge, Paragraph,
 };
 use ratatui::Frame;
 use ratatui::{
     prelude::*,
     widgets::{block::Title, *},
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap};
 use std::f64::consts::PI;
-use std::fmt::format;
+
 use tui_textarea::TextArea;
 
 use crate::ui::ui_app::UIApp;
@@ -102,7 +102,7 @@ where
         .x_bounds([-90.0, 90.0])
         .y_bounds([-60.0, 60.0])
         .paint(|ctx| {
-            let canvas_components = make_canvas(&app);
+            let canvas_components = make_canvas(app);
             for node_rect in canvas_components.nodes.values() {
                 if node_rect.color == UI_LEADER_RECT_COLOR {
                     ctx.draw(node_rect);
@@ -119,7 +119,7 @@ where
         .x_bounds([-90.0, 90.0])
         .y_bounds([-60.0, 60.0])
         .paint(|ctx| {
-            let canvas_components = make_canvas(&app);
+            let canvas_components = make_canvas(app);
 
             for line in canvas_components.connections.values() {
                 ctx.draw(line);
@@ -132,7 +132,7 @@ where
     rect.render_widget(canvas_node, body_chunks[1]);
 
     // Input
-    let mut textarea = app.input_area.clone();
+    let textarea = app.input_area.clone();
     let input = draw_input(textarea);
     rect.render_widget(input.widget(), chunks[4]);
 }
@@ -197,7 +197,7 @@ fn make_canvas(app: &UIApp) -> CanvasComponents {
             let current_rect = nodes_with_rects.get(node1).unwrap();
             let next_rect = nodes_with_rects.get(node2).unwrap();
 
-            if let None = network_status.partitions.get(&(*node1, *node2)) {
+            if network_status.partitions.get(&(*node1, *node2)).is_none() {
                 let line = canvas::Line {
                     x1: current_rect.x + current_rect.width / 2.0,
                     y1: current_rect.y + current_rect.height / 2.0,
@@ -218,7 +218,7 @@ fn make_canvas(app: &UIApp) -> CanvasComponents {
             x: rect.x + rect.width / 4.0,
             y: rect.y + rect.width / 6.0,
             span: Span::styled(
-                String::from(" Node".to_string() + &*node_id.to_string() + " "),
+                " Node".to_string() + &*node_id.to_string() + " ",
                 Style::default().fg(Color::White).bold().bg(node.color),
             ),
         };
@@ -232,7 +232,7 @@ fn make_canvas(app: &UIApp) -> CanvasComponents {
     }
 }
 
-fn draw_title<'a>(app: &UIApp) -> Paragraph<'a> {
+fn draw_title<'a>(_app: &UIApp) -> Paragraph<'a> {
     Paragraph::new(UI_TITLE)
         .style(Style::default().fg(Color::LightCyan))
         .alignment(Alignment::Center)
@@ -290,7 +290,7 @@ fn draw_progress_bar<'a>(app: &UIApp) -> Gauge<'a> {
                 .bg(Color::Black)
                 .add_modifier(Modifier::ITALIC),
         )
-        .percent(((progress as u64 * 100 / total as u64) as u16).min(100))
+        .percent(((progress * 100 / total) as u16).min(100))
         .label(label)
 }
 
@@ -305,13 +305,13 @@ fn draw_input(mut textarea: TextArea) -> TextArea {
     textarea
 }
 
-fn draw_output<'a>(app: &UIApp, block_height: i64, block_width: i64) -> Paragraph<'a> {
+fn draw_output<'a>(app: &UIApp, block_height: i64, _block_width: i64) -> Paragraph<'a> {
     // let logs = reformat_output(app.get_logs(), block_width as u64);
     let logs = app.get_logs();
     let log_len = logs.len();
     Paragraph::new(
         logs.into_iter()
-            .map(|s| Spans::from(Span::raw(s)))
+            .map(|s| Line::from(Span::raw(s)))
             .collect::<Vec<_>>(),
     )
     .style(Style::default().fg(Color::LightCyan))
@@ -330,7 +330,8 @@ fn draw_output<'a>(app: &UIApp, block_height: i64, block_width: i64) -> Paragrap
     )
 }
 
-// FIXME: This is a temporary solution to the problem of long lines in the output area.
+#[allow(dead_code)]
+// This is a temporary solution to the problem of long lines in the output area.
 fn reformat_output(logs: Vec<String>, block_width: u64) -> Vec<String> {
     let mut result = Vec::new();
     for log in logs {

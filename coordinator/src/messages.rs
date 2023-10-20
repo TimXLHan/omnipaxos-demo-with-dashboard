@@ -60,7 +60,8 @@ pub mod ui {
         OmnipaxosNodeCrashed(u64),
         ClusterUnreachable,
         NoSuchNode(u64, Vec<u64>),
-        ProposalStatus(u16),
+        ProposalStatus(u64),
+        #[allow(dead_code)]
         Debug(String),
         Exit,
     }

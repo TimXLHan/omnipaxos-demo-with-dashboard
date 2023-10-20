@@ -4,7 +4,7 @@ use crate::coordinator::KeyValue;
 use crate::messages::coordinator::{CDMessage, KVCommand};
 use crate::messages::ui::UIMessage;
 use crate::messages::IOMessage;
-use chrono::{DateTime, Utc};
+
 use tokio::sync::mpsc::Sender;
 
 pub struct CLIHandler {
@@ -55,7 +55,7 @@ impl fmt::Display for ParseCommandError {
     }
 }
 fn parse_command(line: String) -> Result<IOMessage, ParseCommandError> {
-    let mut words = line.trim().split(" ");
+    let mut words = line.trim().split(' ');
     let command_type = words
         .next()
         .ok_or(ParseCommandError(INVALID_COMMAND.to_string()))?;

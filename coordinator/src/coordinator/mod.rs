@@ -3,7 +3,7 @@ use crate::messages::ui::UIMessage;
 use crate::messages::IOMessage;
 use rand::random;
 use serde::{Deserialize, Serialize};
-use serde_json;
+
 use std::collections::{HashSet, VecDeque};
 use std::env;
 use std::time::Duration;
@@ -25,7 +25,7 @@ fn connection_to_port(from: &u64, to: &u64) -> u64 {
 }
 
 fn port_to_connection(port: &u64) -> (u64, u64) {
-    let from = ((port / 10) % 10) as u64;
+    let from = (port / 10) % 10;
     let to = port % 10;
     match from <= to {
         true => (from, to),
@@ -44,10 +44,8 @@ lazy_static! {
     /// Port to port mapping, for which sockets should be proxied to each other.
     pub static ref PORT_MAPPINGS: HashMap<u64, u64> = {
         let mut port_mappings = HashMap::new();
-        let mut i = 0;
-        for from in NODES.iter() {
-            i += 1;
-            for to in &NODES[i..] {
+        for (i, from) in NODES.iter().enumerate() {
+            for to in &NODES[i+1..] {
                 let from_port = connection_to_port(from, to);
                 let to_port = connection_to_port(to, from);
                 port_mappings.insert(from_port, to_port);
@@ -132,11 +130,10 @@ impl Coordinator {
                 .op_sockets
                 .lock()
                 .await
-                .keys()
-                .map(|&key| key)
+                .keys().copied()
                 .collect(),
             partitions,
-            max_round: self.max_round.lock().await.clone(),
+            max_round: *self.max_round.lock().await,
         }
     }
 
@@ -260,7 +257,7 @@ impl Coordinator {
         tokio::spawn(async move {
             while let Some((from_port, to_port, msg)) = central_receiver.recv().await {
                 // drop message if network is partitioned between sender and receiver
-                let nodes_are_connected = !partitions.lock().await.contains(&from_port);
+                let nodes_are_connected = !partitions.lock().await.contains(from_port);
                 if nodes_are_connected {
                     let sender = out_channels.get(to_port).unwrap().clone();
                     _ = sender.send(msg);
@@ -407,9 +404,7 @@ impl Coordinator {
                     .leader;
                 let next_leader = *self
                     .nodes
-                    .iter()
-                    .filter(|&&n| n != current_leader)
-                    .next()
+                    .iter().find(|&&n| n != current_leader)
                     .unwrap();
                 let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
                 let mut partitions = self.partitions.lock().await;
@@ -434,9 +429,7 @@ impl Coordinator {
                     .leader;
                 let next_leader = *self
                     .nodes
-                    .iter()
-                    .filter(|&&n| n != current_leader)
-                    .next()
+                    .iter().find(|&&n| n != current_leader)
                     .unwrap();
                 let mut partitions = self.partitions.lock().await;
                 partitions.clear();
