@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
-    time::Duration,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::{
@@ -14,8 +13,7 @@ use crate::messages::{
     ui::UIMessage,
     IOMessage,
 };
-
-const PROPOSE_TICK_RATE: Duration = Duration::from_millis(10);
+use crate::utils::PROPOSE_TICK_RATE;
 
 pub struct ProposalStreamer {
     io_sender: Sender<IOMessage>,

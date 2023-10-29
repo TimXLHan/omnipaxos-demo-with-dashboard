@@ -8,14 +8,13 @@ use tui_textarea::{Input, Key};
 
 use std::io::stdout;
 use std::sync::Arc;
-use std::time::Instant;
 
 use crate::messages::coordinator::APIResponse;
 use crate::messages::{ui::UIMessage, IOMessage};
 use crate::ui::ui_app::cli::CLIHandler;
 use crate::ui::ui_app::render::render;
 use crate::ui::ui_app::{UIApp};
-use crate::utils::{UI_MAX_THROUGHPUT_SIZE, UI_TICK_RATE};
+use crate::utils::{UI_MAX_DECIDED_BARS, UI_TICK_RATE};
 
 mod ui_app;
 
@@ -172,32 +171,29 @@ impl Ticker {
     pub async fn run(&mut self) {
         let mut ui_interval = tokio::time::interval(UI_TICK_RATE);
         let mut last_decided_idx: u64 = self.ui_app.lock().await.decided_idx;
+        let mut counter: f64 = 0.0;
         loop {
             tokio::select! {
                 _ = ui_interval.tick() => {
-                    {
-                        let mut ui_app = self.ui_app.lock().await;
-                        let throughput = (ui_app.decided_idx - last_decided_idx) as f64;
-                        let round = if throughput as u64 == 0 {
-                            " ".to_string()
-                        } else {
-                            match ui_app.network_state.max_round {
-                            Some(round) => format!("{}", round.round_num),
-                            None => "0".to_string(),
-                        }
-                        };
-                        ui_app.throughput_data.insert(0, (round, throughput as u64));
-                        if ui_app.throughput_data.len() > UI_MAX_THROUGHPUT_SIZE {
-                            ui_app.throughput_data.pop();
-                        }
-                        last_decided_idx = ui_app.decided_idx;
-                        // Update dps
-                        ui_app.last_dps += throughput as u64;
-                        if ui_app.last_dps_update_time.elapsed() > std::time::Duration::from_secs(1) {
-                            ui_app.last_dps_update_time = Instant::now();
-                            ui_app.dps = ui_app.last_dps as f64;
-                            ui_app.last_dps = 0;
-                        }
+                    counter += 1.0;
+                    let mut ui_app = self.ui_app.lock().await;
+                    let num_decided = (ui_app.decided_idx - last_decided_idx) as f64;
+                    let round = if num_decided as u64 == 0 {
+                        " ".to_string()
+                    } else {
+                        match ui_app.network_state.max_round {
+                        Some(round) => format!("{}", round.round_num),
+                        None => "0".to_string(),
+                    }
+                    };
+                    ui_app.decided_data.insert(0, (round, num_decided as u64));
+                    if ui_app.decided_data.len() > UI_MAX_DECIDED_BARS {
+                        ui_app.decided_data.pop();
+                    }
+                    last_decided_idx = ui_app.decided_idx;
+                    if counter * UI_TICK_RATE.as_secs_f64() >= 1.0 {
+                        counter = 0.0;
+                        ui_app.throughput = num_decided/ UI_TICK_RATE.as_secs_f64();
                     }
                     self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
                 }

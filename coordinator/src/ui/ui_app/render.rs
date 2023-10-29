@@ -70,7 +70,7 @@ where
     // rect.render_widget(tooltip, chunks[1]);
 
     let chart_data: &Vec<(&str, u64)> = &app
-        .throughput_data
+        .decided_data
         .iter()
         .take(window_width / (UI_BARCHART_WIDTH + UI_BARCHART_GAP) as usize)
         .map(|(s, num)| (s.as_str(), *num))
@@ -248,7 +248,7 @@ fn draw_chart<'a>(app: &UIApp, data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
     let leader = app.leader.clone().unwrap_or_default();
     let title = Title::from(Line::from(vec![
         Span::styled(
-            format!("{}: {:3} req/s", UI_THROUGHPUT_TITLE, app.dps),
+            format!("{}: {:3} req/s", UI_THROUGHPUT_TITLE, app.throughput),
             Style::default()
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),

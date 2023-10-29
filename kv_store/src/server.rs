@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::time;
 use crate::network::CLIENT_PID;
 
-const SNAPSHOT_IDX: u64 = 10000;
+const SNAPSHOT_IDX: u64 = 100000;
 
 #[derive(Clone, Copy, Eq, Debug, Ord, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub struct Round {
@@ -103,7 +103,12 @@ impl Server {
 
     async fn handle_new_leader(&mut self) {
         // Notify the network_actor of new leader
-        let new_ballot = self.omni_paxos.get_current_leader_ballot();
+        let b = self.omni_paxos.get_promise();
+        let new_ballot = if b == Ballot::default() {
+            None
+        } else {
+            Some(b)
+        };
         if self.last_sent_leader != new_ballot {
             self.last_sent_leader = new_ballot;
             let msg = Message::APIResponse(APIResponse::NewRound(new_ballot.map(|b| b.into())));

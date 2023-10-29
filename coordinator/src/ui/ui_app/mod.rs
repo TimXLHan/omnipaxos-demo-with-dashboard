@@ -2,7 +2,6 @@ use crate::coordinator::NetworkState;
 use crate::messages::IOMessage;
 use crate::utils::COLORS;
 use ratatui::style::Color;
-use std::time::Instant;
 use tokio::sync::mpsc::Sender;
 use tui_textarea::TextArea;
 
@@ -31,16 +30,14 @@ pub struct UIApp<'a> {
     pub scroll: i64,
     pub input_area: TextArea<'a>,
     pub network_state: NetworkState,
-    pub throughput_data: Vec<(String, u64)>,
+    pub decided_data: Vec<(String, u64)>,
     pub decided_idx: u64,
     // Progress of the batch: (finished, total)
     pub progress: Progress,
     /// Ids of all the nodes in the cluster specified in the configuration.
     pub nodes: Vec<Node>,
     pub leader: Option<Node>,
-    pub(crate) dps: f64,
-    pub(crate) last_dps_update_time: Instant,
-    pub(crate) last_dps: u64,
+    pub(crate) throughput: f64,
 }
 
 impl<'a> UIApp<'a> {
@@ -51,7 +48,7 @@ impl<'a> UIApp<'a> {
             logs: vec![],
             scroll: 0,
             network_state: Default::default(),
-            throughput_data: vec![],
+            decided_data: vec![],
             decided_idx: 0,
             // progress: (89, 166),
             progress: Progress {
@@ -62,9 +59,7 @@ impl<'a> UIApp<'a> {
             },
             nodes: vec![],
             leader: None,
-            dps: 0.0,
-            last_dps_update_time: Instant::now(),
-            last_dps: 0,
+            throughput: 0.0,
         }
     }
 
