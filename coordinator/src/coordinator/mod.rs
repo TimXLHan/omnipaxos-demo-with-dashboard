@@ -19,6 +19,7 @@ use tokio::{
 
 use self::proposal_streamer::ProposalStreamer;
 pub mod proposal_streamer;
+const BATCH_KEY: &str = "BATCH_KEY";
 
 fn connection_to_port(from: &u64, to: &u64) -> u64 {
     8000 + (from * 10) + to
@@ -385,7 +386,7 @@ impl Coordinator {
         let mut cmd_queue = self.cmd_queue.lock().await;
         for _ in 0..num {
             let cmd = KVCommand::Put(KeyValue {
-                key: random::<u64>().to_string(),
+                key: BATCH_KEY.to_string(),
                 value: random::<u64>().to_string(),
             });
             cmd_queue.push_front(cmd);

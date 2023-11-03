@@ -43,7 +43,7 @@ where
                 // Progress Bar
                 Constraint::Length(3),
                 // Output & Connection Status
-                Constraint::Min(10),
+                Constraint::Min(app.nodes.len() as u16),
                 // Input
                 Constraint::Length(3),
             ]

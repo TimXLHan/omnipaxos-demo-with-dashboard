@@ -32,7 +32,6 @@ pub struct UIApp<'a> {
     pub network_state: NetworkState,
     pub decided_data: Vec<(String, u64)>,
     pub decided_idx: u64,
-    // Progress of the batch: (finished, total)
     pub progress: Progress,
     /// Ids of all the nodes in the cluster specified in the configuration.
     pub nodes: Vec<Node>,
@@ -50,7 +49,6 @@ impl<'a> UIApp<'a> {
             network_state: Default::default(),
             decided_data: vec![],
             decided_idx: 0,
-            // progress: (89, 166),
             progress: Progress {
                 starting_idx: 0,
                 is_ongoing: false,

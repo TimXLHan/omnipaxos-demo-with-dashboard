@@ -72,7 +72,6 @@ impl UI {
                 APIResponse::Decided(idx) => {
                     let mut ui_app = self.ui_app.lock().await;
                     ui_app.progress.finished = idx - ui_app.progress.starting_idx;
-
                     ui_app.decided_idx = idx;
                 }
                 APIResponse::Get(key, value) => {
