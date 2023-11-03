@@ -75,10 +75,13 @@ impl UI {
                     ui_app.decided_idx = idx;
                 }
                 APIResponse::Get(key, value) => {
-                    self.ui_app
-                        .lock()
-                        .await
-                        .append_log(format!("The key: {key} has value: {:?}", value));
+                    {
+                        let mut ui_app = self.ui_app.lock().await;
+                        ui_app.append_log(format!("The key: {key} has value: {:?}", value));
+                        if !ui_app.progress.is_ongoing && ui_app.progress.finished < ui_app.progress.total {
+                            ui_app.progress.finished += 1;
+                        }
+                    }
                     self.update_ui().await;
                 }
                 // Ignore this case. Will get notified in OmniPaxosNetworkUpdate instead
