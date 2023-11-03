@@ -16,7 +16,7 @@ pub(crate) const CLIENT_PID: u64 = 0;
 pub(crate) enum Message {
     OmniPaxosMsg(OPMessage<KVCommand>),
     APIRequest(KVCommand),
-    APIResponse(APIResponse),
+    APIResponse(APIResponse, u64),
 }
 
 pub struct Network {

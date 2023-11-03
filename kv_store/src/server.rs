@@ -1,5 +1,6 @@
 use crate::database::Database;
 use crate::kv::KVCommand;
+use crate::network::CLIENT_PID;
 use crate::{
     network::{Message, Network},
     OmniPaxosKV,
@@ -10,7 +11,6 @@ use omnipaxos_ui::OmniPaxosUI;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time;
-use crate::network::CLIENT_PID;
 
 const SNAPSHOT_IDX: u64 = 100000;
 
@@ -38,6 +38,7 @@ pub enum APIResponse {
 }
 
 pub struct Server {
+    pub pid: u64,
     pub omni_paxos_ui: OmniPaxosUI,
     pub omni_paxos: OmniPaxosKV,
     pub network: Network,
@@ -54,7 +55,7 @@ impl Server {
                 Message::APIRequest(kv_cmd) => match kv_cmd {
                     KVCommand::Get(key) => {
                         let value = self.database.handle_command(KVCommand::Get(key.clone()));
-                        let msg = Message::APIResponse(APIResponse::Get(key, value));
+                        let msg = Message::APIResponse(APIResponse::Get(key, value), self.pid);
                         self.network.send(CLIENT_PID, msg).await;
                     }
                     cmd => {
@@ -96,7 +97,7 @@ impl Server {
             }
             self.last_decided_idx = new_decided_idx;
             /*** reply client ***/
-            let msg = Message::APIResponse(APIResponse::Decided(new_decided_idx));
+            let msg = Message::APIResponse(APIResponse::Decided(new_decided_idx), self.pid);
             self.network.send(CLIENT_PID, msg).await
         }
     }
@@ -111,7 +112,10 @@ impl Server {
         };
         if self.last_sent_leader != new_ballot {
             self.last_sent_leader = new_ballot;
-            let msg = Message::APIResponse(APIResponse::NewRound(new_ballot.map(|b| b.into())));
+            let msg = Message::APIResponse(
+                APIResponse::NewRound(new_ballot.map(|b| b.into())),
+                self.pid,
+            );
             self.network.send(CLIENT_PID, msg).await;
         }
     }

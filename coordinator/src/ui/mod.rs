@@ -13,7 +13,7 @@ use crate::messages::coordinator::APIResponse;
 use crate::messages::{ui::UIMessage, IOMessage};
 use crate::ui::ui_app::cli::CLIHandler;
 use crate::ui::ui_app::render::render;
-use crate::ui::ui_app::{UIApp};
+use crate::ui::ui_app::UIApp;
 use crate::utils::{UI_MAX_DECIDED_BARS, UI_TICK_RATE};
 
 mod ui_app;
@@ -68,7 +68,7 @@ impl UI {
                 self.ui_app.lock().await.set_network_state(network_statue);
                 self.update_ui().await;
             }
-            UIMessage::OmnipaxosResponse(response) => match response {
+            UIMessage::OmnipaxosResponse(response, pid) => match response {
                 APIResponse::Decided(idx) => {
                     let mut ui_app = self.ui_app.lock().await;
                     ui_app.progress.finished = idx - ui_app.progress.starting_idx;
@@ -77,8 +77,10 @@ impl UI {
                 APIResponse::Get(key, value) => {
                     {
                         let mut ui_app = self.ui_app.lock().await;
-                        ui_app.append_log(format!("The key: {key} has value: {:?}", value));
-                        if !ui_app.progress.is_ongoing && ui_app.progress.finished < ui_app.progress.total {
+                        ui_app.append_log(format!("[Node {pid}] key: {key}, value: {:?}", value));
+                        if !ui_app.progress.is_ongoing
+                            && ui_app.progress.finished < ui_app.progress.total
+                        {
                             ui_app.progress.finished += 1;
                         }
                     }

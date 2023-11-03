@@ -1,18 +1,15 @@
-
 use crate::messages::coordinator::Round;
 use ratatui::backend::Backend;
 use ratatui::symbols::Marker;
-use ratatui::text::{Span, Line};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::canvas::{Canvas, Rectangle};
-use ratatui::widgets::{
-    block::Block, BarChart, BorderType, Borders, Gauge, Paragraph,
-};
+use ratatui::widgets::{block::Block, BarChart, BorderType, Borders, Gauge, Paragraph};
 use ratatui::Frame;
 use ratatui::{
     prelude::*,
     widgets::{block::Title, *},
 };
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use tui_textarea::TextArea;

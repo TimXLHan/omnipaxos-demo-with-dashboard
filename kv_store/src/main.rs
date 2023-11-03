@@ -5,7 +5,6 @@ use omnipaxos_storage::memory_storage::MemoryStorage;
 use omnipaxos_ui::OmniPaxosUI;
 use std::env;
 
-
 #[macro_use]
 extern crate lazy_static;
 
@@ -48,8 +47,9 @@ type OmniPaxosKV = OmniPaxos<KVCommand, MemoryStorage<KVCommand>>;
 
 #[tokio::main]
 async fn main() {
+    let pid = *PID;
     let server_config = ServerConfig {
-        pid: *PID,
+        pid,
         election_tick_timeout: 5,
         custom_logger: Some(OmniPaxosUI::logger()),
         ..Default::default()
@@ -69,6 +69,7 @@ async fn main() {
         .build(MemoryStorage::default())
         .expect("failed to build OmniPaxos");
     let mut server = Server {
+        pid,
         omni_paxos_ui,
         omni_paxos,
         network: network::Network::new().await,
