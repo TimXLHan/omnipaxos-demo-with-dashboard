@@ -3,7 +3,7 @@ use std::time::Duration;
 
 pub const PROPOSE_TICK_RATE: Duration = Duration::from_millis(1);
 pub const CHANNEL_BUFFER_SIZE: usize = 100000;
-pub const UI_TITLE: &str = "The OmniPaxos Playground";
+pub const UI_TITLE: &str = "The OmniPaxos Playground (press 'q' or 'esc' to exit)";
 pub const UI_INPUT_AREA_TITLE: &str = "Input (Enter to send)";
 pub const UI_THROUGHPUT_TITLE: &str = "Throughput";
 pub const UI_OUTPUT_AREA_TITLE: &str =

@@ -82,7 +82,8 @@ where
     // Output & Status
     let body_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(80), Constraint::Min(20)].as_ref())
+        // .constraints([Constraint::Length(50), Constraint::Min(10)].as_ref())
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
         .split(chunks[3]);
 
     // Output
