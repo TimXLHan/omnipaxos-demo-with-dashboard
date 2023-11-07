@@ -1,20 +1,24 @@
-use crate::coordinator::NetworkState;
 use crate::messages::coordinator::Round;
 use ratatui::backend::Backend;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
-use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols::Marker;
-use ratatui::text::{Span, Spans};
-use ratatui::widgets::canvas::{Canvas, Context, Line, Rectangle};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Sparkline, Wrap, BarChart, Gauge};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::canvas::{Canvas, Rectangle};
+use ratatui::widgets::{block::Block, BarChart, BorderType, Borders, Gauge, Paragraph};
 use ratatui::Frame;
-use std::collections::{HashMap, VecDeque};
+use ratatui::{
+    prelude::*,
+    widgets::{block::Title, *},
+};
+use std::collections::HashMap;
 use std::f64::consts::PI;
-use std::fmt::format;
+
 use tui_textarea::TextArea;
 
 use crate::ui::ui_app::UIApp;
-use crate::utils::{UI_BARCHART_GAP, UI_BARCHART_WIDTH, UI_INPUT_AREA_TITLE, UI_OUTPUT_AREA_TITLE, UI_PROGRESS_BAR_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE};
+use crate::utils::{
+    UI_BARCHART_GAP, UI_BARCHART_WIDTH, UI_INPUT_AREA_TITLE, UI_LEADER_RECT_COLOR,
+    UI_OUTPUT_AREA_TITLE, UI_PROGRESS_BAR_TITLE, UI_THROUGHPUT_TITLE, UI_TITLE,
+};
 
 /// render ui components
 pub fn render<B>(rect: &mut Frame<B>, app: &UIApp)
@@ -36,7 +40,7 @@ where
                 // Progress Bar
                 Constraint::Length(3),
                 // Output & Connection Status
-                Constraint::Min(10),
+                Constraint::Min(app.nodes.len() as u16),
                 // Input
                 Constraint::Length(3),
             ]
@@ -63,12 +67,12 @@ where
     // rect.render_widget(tooltip, chunks[1]);
 
     let chart_data: &Vec<(&str, u64)> = &app
-        .throughput_data
+        .decided_data
         .iter()
         .take(window_width / (UI_BARCHART_WIDTH + UI_BARCHART_GAP) as usize)
         .map(|(s, num)| (s.as_str(), *num))
         .collect::<Vec<(&str, u64)>>();
-    let chart = draw_chart(chart_data);
+    let chart = draw_chart(app, chart_data);
     rect.render_widget(chart, chunks[1]);
 
     // Progress Bar
@@ -78,11 +82,16 @@ where
     // Output & Status
     let body_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(80), Constraint::Min(20)].as_ref())
+        // .constraints([Constraint::Length(50), Constraint::Min(10)].as_ref())
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
         .split(chunks[3]);
 
     // Output
-    let output = draw_output(app, body_chunks[0].height as i64 - 2, body_chunks[0].width as i64);
+    let output = draw_output(
+        app,
+        body_chunks[0].height as i64 - 2,
+        body_chunks[0].width as i64,
+    );
     rect.render_widget(output, body_chunks[0]);
 
     let canvas_node = Canvas::default()
@@ -91,9 +100,11 @@ where
         .x_bounds([-90.0, 90.0])
         .y_bounds([-60.0, 60.0])
         .paint(|ctx| {
-            let canvas_components = make_canvas(&app.network_state);
-            for node in canvas_components.nodes.values() {
-                ctx.draw(node);
+            let canvas_components = make_canvas(app);
+            for node_rect in canvas_components.nodes.values() {
+                if node_rect.color == UI_LEADER_RECT_COLOR {
+                    ctx.draw(node_rect);
+                }
             }
 
             for label in canvas_components.labels.values() {
@@ -106,7 +117,7 @@ where
         .x_bounds([-90.0, 90.0])
         .y_bounds([-60.0, 60.0])
         .paint(|ctx| {
-            let canvas_components = make_canvas(&app.network_state);
+            let canvas_components = make_canvas(app);
 
             for line in canvas_components.connections.values() {
                 ctx.draw(line);
@@ -119,14 +130,14 @@ where
     rect.render_widget(canvas_node, body_chunks[1]);
 
     // Input
-    let mut textarea = app.input_area.clone();
+    let textarea = app.input_area.clone();
     let input = draw_input(textarea);
     rect.render_widget(input.widget(), chunks[4]);
 }
 
 struct CanvasComponents {
     nodes: HashMap<u64, Rectangle>,
-    connections: HashMap<(u64, u64), Line>,
+    connections: HashMap<(u64, u64), canvas::Line>,
     labels: HashMap<u64, Label<'static>>,
 }
 
@@ -136,7 +147,15 @@ struct Label<'a> {
     span: Span<'a>,
 }
 
-fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
+fn make_canvas(app: &UIApp) -> CanvasComponents {
+    if app.nodes.is_empty() {
+        return CanvasComponents {
+            nodes: HashMap::new(),
+            connections: HashMap::new(),
+            labels: HashMap::new(),
+        };
+    }
+    let network_status = &app.network_state;
     let num_of_nodes = network_status.alive_nodes.len();
     let node_width = 15.0;
     let radius = 50.0; // Radius of the circle
@@ -146,21 +165,21 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
     let angle_step = 2.0 * PI / (num_of_nodes as f64); // Angle increment between each rectangle
     let mut nodes_with_rects = HashMap::new();
 
-    // Nodes
+    // Rectangles, but only shows the leader
     for i in 0..num_of_nodes {
         let angle = i as f64 * angle_step;
         let x = center_x + radius * angle.cos();
         let y = center_y + radius * angle.sin();
         let node_id = network_status.alive_nodes[i];
         let color = match network_status.max_round {
-            Some(Round { leader: l, .. }) if node_id == l => Color::Green,
-            _ => Color::White,
+            Some(Round { leader: l, .. }) if node_id == l => UI_LEADER_RECT_COLOR,
+            _ => Color::Reset,
         };
         // let rect = Rectangle::new(Point::new(x, y), 1.0, 1.0); // Adjust the width and height as desired
         let rect = Rectangle {
             x,
             y,
-            width: node_width,
+            width: node_width * 2.0,
             height: node_width,
             color,
         };
@@ -176,13 +195,13 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
             let current_rect = nodes_with_rects.get(node1).unwrap();
             let next_rect = nodes_with_rects.get(node2).unwrap();
 
-            if let None = network_status.partitions.get(&(*node1, *node2)) {
-                let line = Line {
+            if network_status.partitions.get(&(*node1, *node2)).is_none() {
+                let line = canvas::Line {
                     x1: current_rect.x + current_rect.width / 2.0,
                     y1: current_rect.y + current_rect.height / 2.0,
                     x2: next_rect.x + next_rect.width / 2.0,
                     y2: next_rect.y + next_rect.height / 2.0,
-                    color: Color::LightCyan,
+                    color: Color::White,
                 };
                 lines.insert((i as u64, j as u64), line);
             }
@@ -192,12 +211,13 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
     // Labels
     let mut labels = HashMap::new();
     for (node_id, rect) in &nodes_with_rects {
+        let node = app.nodes.iter().find(|node| node.pid == *node_id).unwrap();
         let label = Label {
             x: rect.x + rect.width / 4.0,
-            y: rect.y + rect.width / 3.0,
+            y: rect.y + rect.width / 6.0,
             span: Span::styled(
-                String::from("Node".to_string() + &*node_id.to_string()),
-                Style::default().fg(Color::White),
+                " Node".to_string() + &*node_id.to_string() + " ",
+                Style::default().fg(Color::White).bold().bg(node.color),
             ),
         };
         labels.insert(*node_id, label);
@@ -210,32 +230,7 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
     }
 }
 
-fn draw_connection_status(data: &Rectangle) -> Canvas<'static, fn(&mut Context)> {
-    Canvas::default()
-        .block(Block::default().title("Canvas").borders(Borders::ALL))
-        .x_bounds([-180.0, 180.0])
-        .y_bounds([-90.0, 90.0])
-        .paint(|ctx| {
-            // println!("{:?}",&data);
-            ctx.draw(&Line {
-                x1: 0.0,
-                y1: 10.0,
-                x2: 10.0,
-                y2: 10.0,
-                color: Color::White,
-            });
-            // ctx.draw(&data);
-            ctx.draw(&Rectangle {
-                x: 10.0,
-                y: 20.0,
-                width: 10.0,
-                height: 10.0,
-                color: Color::Red,
-            });
-        })
-}
-
-fn draw_title<'a>(app: &UIApp ) -> Paragraph<'a> {
+fn draw_title<'a>(_app: &UIApp) -> Paragraph<'a> {
     Paragraph::new(UI_TITLE)
         .style(Style::default().fg(Color::LightCyan))
         .alignment(Alignment::Center)
@@ -247,23 +242,41 @@ fn draw_title<'a>(app: &UIApp ) -> Paragraph<'a> {
         )
 }
 
-fn draw_chart<'a>(data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
+fn draw_chart<'a>(app: &UIApp, data: &'a Vec<(&'a str, u64)>) -> BarChart<'a> {
+    let leader = app.leader.clone().unwrap_or_default();
+    let title = Title::from(Line::from(vec![
+        Span::styled(
+            format!("{}: {:3} req/s", UI_THROUGHPUT_TITLE, app.throughput),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " (# round number)",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
     BarChart::default()
-        .block(
-            Block::default()
-                .title(UI_THROUGHPUT_TITLE)
-                .borders(Borders::ALL),
-        )
+        .block(Block::default().title(title).borders(Borders::ALL))
         .data(data)
         .bar_width(UI_BARCHART_WIDTH)
         .bar_gap(UI_BARCHART_GAP)
-        .value_style(Style::default().fg(Color::Black).bg(Color::LightGreen))
-        .style(Style::default().fg(Color::LightGreen))
+        .value_style(Style::default().fg(leader.color).bg(leader.color))
+        .label_style(Style::default().fg(Color::Yellow))
+        .bar_style(Style::default().fg(leader.color))
 }
-
 fn draw_progress_bar<'a>(app: &UIApp) -> Gauge<'a> {
-    let (progress, total) = (app.progress.finished, app.progress.total);
-    let label = format!("{}/{}", progress, total);
+    let (progress, total, label) = {
+        let (prog, tot) = (app.progress.finished, app.progress.total);
+        if tot > 0 {
+            let label = format!("{}/{}", prog, tot);
+            (prog, tot, label)
+        } else {
+            (1, 1, "N/A".to_string())
+        }
+    };
     let is_ongoing = app.progress.is_ongoing;
     let bar_color = if is_ongoing {
         Color::LightGreen
@@ -271,14 +284,18 @@ fn draw_progress_bar<'a>(app: &UIApp) -> Gauge<'a> {
         Color::Gray
     };
     Gauge::default()
-        .block(Block::default().title(UI_PROGRESS_BAR_TITLE).borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(UI_PROGRESS_BAR_TITLE)
+                .borders(Borders::ALL),
+        )
         .gauge_style(
             Style::default()
                 .fg(bar_color)
                 .bg(Color::Black)
                 .add_modifier(Modifier::ITALIC),
         )
-        .percent(((progress as u64  * 100 / total as u64) as u16).min(100))
+        .percent(((progress * 100 / total) as u16).min(100))
         .label(label)
 }
 
@@ -293,18 +310,18 @@ fn draw_input(mut textarea: TextArea) -> TextArea {
     textarea
 }
 
-fn draw_output<'a>(app: &UIApp, block_height: i64, block_width: i64) -> Paragraph<'a> {
+fn draw_output<'a>(app: &UIApp, block_height: i64, _block_width: i64) -> Paragraph<'a> {
     // let logs = reformat_output(app.get_logs(), block_width as u64);
     let logs = app.get_logs();
     let log_len = logs.len();
     Paragraph::new(
         logs.into_iter()
-            .map(|s| Spans::from(Span::raw(s)))
+            .map(|s| Line::from(Span::raw(s)))
             .collect::<Vec<_>>(),
     )
     .style(Style::default().fg(Color::LightCyan))
     .alignment(Alignment::Left)
-        .scroll((
+    .scroll((
         (log_len as i64 - block_height + app.scroll).max(0) as u16,
         0,
     ))
@@ -318,8 +335,8 @@ fn draw_output<'a>(app: &UIApp, block_height: i64, block_width: i64) -> Paragrap
     )
 }
 
-
-// FIXME: This is a temporary solution to the problem of long lines in the output area.
+#[allow(dead_code)]
+// This is a temporary solution to the problem of long lines in the output area.
 fn reformat_output(logs: Vec<String>, block_width: u64) -> Vec<String> {
     let mut result = Vec::new();
     for log in logs {
@@ -345,4 +362,3 @@ fn split_string_by_length(input: &str, length: usize) -> Vec<String> {
 
     result
 }
-

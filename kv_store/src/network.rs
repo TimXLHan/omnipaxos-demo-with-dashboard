@@ -1,6 +1,6 @@
 use omnipaxos::messages::Message as OPMessage;
 use serde::{Deserialize, Serialize};
-use serde_json;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::{
@@ -10,12 +10,13 @@ use tokio::{
 };
 
 use crate::{kv::KVCommand, server::APIResponse, NODES, PID as MY_PID};
+pub(crate) const CLIENT_PID: u64 = 0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) enum Message {
     OmniPaxosMsg(OPMessage<KVCommand>),
     APIRequest(KVCommand),
-    APIResponse(APIResponse),
+    APIResponse(APIResponse, u64),
 }
 
 pub struct Network {
@@ -36,7 +37,7 @@ impl Network {
     /// Sends the message to the receiver.
     /// NodeId 0 is the Client.
     pub(crate) async fn send(&mut self, receiver: u64, msg: Message) {
-        let writer = if receiver == 0 {
+        let writer = if receiver == CLIENT_PID {
             self.api_socket.as_mut()
         } else {
             self.sockets.get_mut(&receiver)
@@ -90,7 +91,7 @@ impl Network {
 
         let mut sockets = HashMap::new();
         for peer in &peers {
-            let addr = peer_addrs.get(&peer).unwrap().clone();
+            let addr = peer_addrs.get(peer).unwrap().clone();
             let stream = TcpStream::connect(addr).await.unwrap();
             let (reader, writer) = stream.into_split();
             sockets.insert(*peer, writer);

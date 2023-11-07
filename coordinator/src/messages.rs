@@ -9,7 +9,7 @@ pub mod coordinator {
     pub enum CDMessage {
         StartBatchingPropose(u64),
         Initialize, // Launch to initialize the application
-        KVCommand(KVCommand),
+        KVCommand(KVCommand, Option<u64>),
         SetConnection(u64, Option<u64>, bool),
         OmnipaxosNodeCrashed(u64),
         OmnipaxosNodeJoined(u64),
@@ -42,7 +42,7 @@ pub mod coordinator {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub(crate) enum Message {
         APIRequest(KVCommand),
-        APIResponse(APIResponse),
+        APIResponse(APIResponse, u64),
     }
 }
 
@@ -55,12 +55,13 @@ pub mod ui {
         ClearConsole,
         Initialize, // Launch to initialize the application
         UpdateUi,
-        OmnipaxosResponse(APIResponse),
+        OmnipaxosResponse(APIResponse, u64),
         OmnipaxosNetworkUpdate(NetworkState),
         OmnipaxosNodeCrashed(u64),
         ClusterUnreachable,
         NoSuchNode(u64, Vec<u64>),
-        ProposalStatus(u16),
+        ProposalStatus(u64),
+        #[allow(dead_code)]
         Debug(String),
         Exit,
     }

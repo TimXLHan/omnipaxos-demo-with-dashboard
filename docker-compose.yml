@@ -3,7 +3,6 @@ version: "3.9"
 x-common-variables: &common-variables
   RUST_BACKTRACE: 1
   NODES: "[1, 2, 3, 4, 5]"
-    #FLEX_QUORUM: "[4,2]"
   CARGO_UNSTABLE_SPARSE_REGISTRY: true
 
 services:
@@ -46,6 +45,9 @@ services:
       PID: 1
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true
+
 
   s2:
     build: kv_store/
@@ -56,6 +58,8 @@ services:
       PID: 2
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true
 
   s3:
     build: kv_store/
@@ -67,6 +71,8 @@ services:
       PID: 3
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true
 
   s4:
     build: kv_store/
@@ -77,6 +83,8 @@ services:
       PID: 4
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true
 
   s5:
     build: kv_store/
@@ -87,3 +95,5 @@ services:
       PID: 5
     depends_on:
       - coordinator
+    stdin_open: true
+    tty: true

@@ -3,7 +3,7 @@ use crate::messages::ui::UIMessage;
 use crate::messages::IOMessage;
 use rand::random;
 use serde::{Deserialize, Serialize};
-use serde_json;
+
 use std::collections::{HashSet, VecDeque};
 use std::env;
 use std::time::Duration;
@@ -19,13 +19,14 @@ use tokio::{
 
 use self::proposal_streamer::ProposalStreamer;
 pub mod proposal_streamer;
+const BATCH_KEY: &str = "BATCH_KEY";
 
 fn connection_to_port(from: &u64, to: &u64) -> u64 {
     8000 + (from * 10) + to
 }
 
 fn port_to_connection(port: &u64) -> (u64, u64) {
-    let from = ((port / 10) % 10) as u64;
+    let from = (port / 10) % 10;
     let to = port % 10;
     match from <= to {
         true => (from, to),
@@ -44,10 +45,8 @@ lazy_static! {
     /// Port to port mapping, for which sockets should be proxied to each other.
     pub static ref PORT_MAPPINGS: HashMap<u64, u64> = {
         let mut port_mappings = HashMap::new();
-        let mut i = 0;
-        for from in NODES.iter() {
-            i += 1;
-            for to in &NODES[i..] {
+        for (i, from) in NODES.iter().enumerate() {
+            for to in &NODES[i+1..] {
                 let from_port = connection_to_port(from, to);
                 let to_port = connection_to_port(to, from);
                 port_mappings.insert(from_port, to_port);
@@ -102,7 +101,7 @@ pub struct Coordinator {
     partitions: Arc<Mutex<HashSet<u64>>>,
     nodes: Vec<u64>,
     max_round: Arc<Mutex<Option<Round>>>,
-    cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
+    cmd_queue: Arc<Mutex<VecDeque<(KVCommand, Option<u64>)>>>,
 }
 
 impl Coordinator {
@@ -128,15 +127,9 @@ impl Coordinator {
             .collect();
         NetworkState {
             nodes: self.nodes.clone(),
-            alive_nodes: self
-                .op_sockets
-                .lock()
-                .await
-                .keys()
-                .map(|&key| key)
-                .collect(),
+            alive_nodes: self.op_sockets.lock().await.keys().copied().collect(),
             partitions,
-            max_round: self.max_round.lock().await.clone(),
+            max_round: *self.max_round.lock().await,
         }
     }
 
@@ -189,15 +182,15 @@ impl Coordinator {
                         }
                         if let Ok(msg) = serde_json::from_slice::<Message>(&data) {
                             match msg {
-                                Message::APIResponse(APIResponse::NewRound(round)) => sender
+                                Message::APIResponse(APIResponse::NewRound(round), _pid) => sender
                                     .send(IOMessage::CDMessage(CDMessage::NewRound(
                                         client_pid, round,
                                     )))
                                     .await
                                     .unwrap(),
-                                Message::APIResponse(response) => sender
+                                Message::APIResponse(response, pid) => sender
                                     .send(IOMessage::UIMessage(UIMessage::OmnipaxosResponse(
-                                        response,
+                                        response, pid,
                                     )))
                                     .await
                                     .unwrap(),
@@ -260,7 +253,7 @@ impl Coordinator {
         tokio::spawn(async move {
             while let Some((from_port, to_port, msg)) = central_receiver.recv().await {
                 // drop message if network is partitioned between sender and receiver
-                let nodes_are_connected = !partitions.lock().await.contains(&from_port);
+                let nodes_are_connected = !partitions.lock().await.contains(from_port);
                 if nodes_are_connected {
                     let sender = out_channels.get(to_port).unwrap().clone();
                     _ = sender.send(msg);
@@ -285,7 +278,6 @@ impl Coordinator {
                     );
                     tokio::spawn(async move { proposer.run().await });
 
-
                     let op_sockets = self.op_sockets.clone();
                     let io_sender = self.io_sender.clone();
                     let partitions = self.partitions.clone();
@@ -294,7 +286,9 @@ impl Coordinator {
                         Coordinator::create_network_actor(partitions),
                     );
                 }
-                CDMessage::KVCommand(command) => self.cmd_queue.lock().await.push_front(command),
+                CDMessage::KVCommand(command, pid) => {
+                    self.cmd_queue.lock().await.push_front((command, pid))
+                }
                 CDMessage::SetConnection(from, to, is_connected) => {
                     if !self.nodes.contains(&from) {
                         self.send_to_ui(UIMessage::NoSuchNode(from, self.nodes.clone()))
@@ -389,10 +383,10 @@ impl Coordinator {
         let mut cmd_queue = self.cmd_queue.lock().await;
         for _ in 0..num {
             let cmd = KVCommand::Put(KeyValue {
-                key: random::<u64>().to_string(),
+                key: BATCH_KEY.to_string(),
                 value: random::<u64>().to_string(),
             });
-            cmd_queue.push_front(cmd);
+            cmd_queue.push_front((cmd, None));
         }
     }
 
@@ -406,12 +400,7 @@ impl Coordinator {
                     .await
                     .expect("Need to have a current leader for quorum loss scenario")
                     .leader;
-                let next_leader = *self
-                    .nodes
-                    .iter()
-                    .filter(|&&n| n != current_leader)
-                    .next()
-                    .unwrap();
+                let next_leader = *self.nodes.iter().find(|&&n| n != current_leader).unwrap();
                 let other_nodes = self.nodes.iter().filter(|&&n| n != next_leader);
                 let mut partitions = self.partitions.lock().await;
                 partitions.clear();
@@ -433,12 +422,7 @@ impl Coordinator {
                     .await
                     .expect("Need to have a current leader for constrained scenario")
                     .leader;
-                let next_leader = *self
-                    .nodes
-                    .iter()
-                    .filter(|&&n| n != current_leader)
-                    .next()
-                    .unwrap();
+                let next_leader = *self.nodes.iter().find(|&&n| n != current_leader).unwrap();
                 let mut partitions = self.partitions.lock().await;
                 partitions.clear();
                 drop(partitions);

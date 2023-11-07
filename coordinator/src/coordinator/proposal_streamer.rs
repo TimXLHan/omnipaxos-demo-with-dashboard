@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
-    time::Duration,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::{
@@ -14,13 +13,12 @@ use crate::messages::{
     ui::UIMessage,
     IOMessage,
 };
-
-const PROPOSE_TICK_RATE: Duration = Duration::from_millis(10);
+use crate::utils::PROPOSE_TICK_RATE;
 
 pub struct ProposalStreamer {
     io_sender: Sender<IOMessage>,
     op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
-    cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
+    cmd_queue: Arc<Mutex<VecDeque<(KVCommand, Option<u64>)>>>,
     max_round: Arc<Mutex<Option<Round>>>,
     last_queue_size: usize,
     current_batch_size: usize,
@@ -31,7 +29,7 @@ impl ProposalStreamer {
     pub fn new(
         io_sender: Sender<IOMessage>,
         op_sockets: Arc<Mutex<HashMap<u64, OwnedWriteHalf>>>,
-        cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
+        cmd_queue: Arc<Mutex<VecDeque<(KVCommand, Option<u64>)>>>,
         max_round: Arc<Mutex<Option<Round>>>,
     ) -> Self {
         Self {
@@ -45,9 +43,9 @@ impl ProposalStreamer {
         }
     }
 
-    pub async fn propose_command(&self, cmd: KVCommand) {
-        let leader = (*self.max_round.lock().await).unwrap().leader;
-        if let Some(writer) = self.op_sockets.lock().await.get_mut(&leader) {
+    pub async fn propose_command(&self, cmd: KVCommand, pid: Option<u64>) {
+        let proposer = pid.unwrap_or((*self.max_round.lock().await).unwrap().leader);
+        if let Some(writer) = self.op_sockets.lock().await.get_mut(&proposer) {
             let request = Message::APIRequest(cmd);
             let mut data = serde_json::to_vec(&request).expect("could not serialize cmd");
             data.push(b'\n');
@@ -61,7 +59,12 @@ impl ProposalStreamer {
     }
 
     async fn send_new_batch_size(&self) {
-        self.io_sender.send(IOMessage::UIMessage(UIMessage::ProposalStatus(self.current_batch_size as u16))).await.unwrap();
+        self.io_sender
+            .send(IOMessage::UIMessage(UIMessage::ProposalStatus(
+                self.current_batch_size as u64,
+            )))
+            .await
+            .unwrap();
     }
 
     pub async fn run(&mut self) {
@@ -82,8 +85,8 @@ impl ProposalStreamer {
                         self.current_batch_size = 0; // Signal to UI that batching is "finished"
                         self.send_new_batch_size().await;
                     }
-                    if let Some(cmd) = queue.pop_back() {
-                        self.propose_command(cmd).await;
+                    if let Some((cmd, pid)) = queue.pop_back() {
+                        self.propose_command(cmd, pid).await;
                         queue_len -= 1;
                     }
                     self.last_queue_size = queue_len;

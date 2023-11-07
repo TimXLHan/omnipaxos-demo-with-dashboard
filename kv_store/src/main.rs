@@ -1,9 +1,9 @@
 use crate::kv::KVCommand;
 use crate::server::Server;
-use omnipaxos::{*, util::FlexibleQuorum};
+use omnipaxos::{util::FlexibleQuorum, *};
 use omnipaxos_storage::memory_storage::MemoryStorage;
+use omnipaxos_ui::OmniPaxosUI;
 use std::env;
-use tokio;
 
 #[macro_use]
 extern crate lazy_static;
@@ -47,24 +47,30 @@ type OmniPaxosKV = OmniPaxos<KVCommand, MemoryStorage<KVCommand>>;
 
 #[tokio::main]
 async fn main() {
+    let pid = *PID;
     let server_config = ServerConfig {
-        pid: *PID,
+        pid,
         election_tick_timeout: 5,
+        custom_logger: Some(OmniPaxosUI::logger()),
         ..Default::default()
     };
     let cluster_config = ClusterConfig {
         configuration_id: 1,
         nodes: (*NODES).clone(),
-        flexible_quorum: FLEX_QUORUM.clone(),
+        flexible_quorum: *FLEX_QUORUM,
     };
     let op_config = OmniPaxosConfig {
         server_config,
         cluster_config,
     };
+    let mut omni_paxos_ui = OmniPaxosUI::with(op_config.clone().into());
+    omni_paxos_ui.start();
     let omni_paxos = op_config
         .build(MemoryStorage::default())
         .expect("failed to build OmniPaxos");
     let mut server = Server {
+        pid,
+        omni_paxos_ui,
         omni_paxos,
         network: network::Network::new().await,
         database: database::Database::new(format!("db_{}", *PID).as_str()),

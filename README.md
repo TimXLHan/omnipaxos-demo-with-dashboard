@@ -13,6 +13,12 @@ Attach to network-actor to give commands to the cluster:
 $ docker attach coordinator
 ```
 
+Attach to kv_store with build-in dashboard for omnipaoxs.
+
+```bash
+$ docker attach s1
+```
+
 # Demo commands
 
 ## Recovery from partition or disconnection

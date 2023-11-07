@@ -1,14 +1,18 @@
 use crate::database::Database;
 use crate::kv::KVCommand;
+use crate::network::CLIENT_PID;
 use crate::{
     network::{Message, Network},
     OmniPaxosKV,
 };
 use omnipaxos::ballot_leader_election::Ballot;
 use omnipaxos::util::LogEntry;
+use omnipaxos_ui::OmniPaxosUI;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tokio::time;
+
+const SNAPSHOT_IDX: u64 = 100000;
 
 #[derive(Clone, Copy, Eq, Debug, Ord, PartialOrd, PartialEq, Serialize, Deserialize)]
 pub struct Round {
@@ -34,6 +38,8 @@ pub enum APIResponse {
 }
 
 pub struct Server {
+    pub pid: u64,
+    pub omni_paxos_ui: OmniPaxosUI,
     pub omni_paxos: OmniPaxosKV,
     pub network: Network,
     pub database: Database,
@@ -49,8 +55,8 @@ impl Server {
                 Message::APIRequest(kv_cmd) => match kv_cmd {
                     KVCommand::Get(key) => {
                         let value = self.database.handle_command(KVCommand::Get(key.clone()));
-                        let msg = Message::APIResponse(APIResponse::Get(key, value));
-                        self.network.send(0, msg).await;
+                        let msg = Message::APIResponse(APIResponse::Get(key, value), self.pid);
+                        self.network.send(CLIENT_PID, msg).await;
                     }
                     cmd => {
                         self.omni_paxos.append(cmd).unwrap();
@@ -82,20 +88,35 @@ impl Server {
                 .read_decided_suffix(self.last_decided_idx)
                 .unwrap();
             self.update_database(decided_entries);
+            if new_decided_idx % SNAPSHOT_IDX == 0
+                || new_decided_idx - self.last_decided_idx > SNAPSHOT_IDX
+            {
+                self.omni_paxos
+                    .snapshot(Some(new_decided_idx), true)
+                    .expect("Failed to snapshot");
+            }
             self.last_decided_idx = new_decided_idx;
             /*** reply client ***/
-            let msg = Message::APIResponse(APIResponse::Decided(new_decided_idx));
-            self.network.send(0, msg).await
+            let msg = Message::APIResponse(APIResponse::Decided(new_decided_idx), self.pid);
+            self.network.send(CLIENT_PID, msg).await
         }
     }
 
     async fn handle_new_leader(&mut self) {
         // Notify the network_actor of new leader
-        let new_ballot = self.omni_paxos.get_current_leader_ballot();
+        let b = self.omni_paxos.get_promise();
+        let new_ballot = if b == Ballot::default() {
+            None
+        } else {
+            Some(b)
+        };
         if self.last_sent_leader != new_ballot {
             self.last_sent_leader = new_ballot;
-            let msg = Message::APIResponse(APIResponse::NewRound(new_ballot.map(|b| b.into())));
-            self.network.send(0, msg).await;
+            let msg = Message::APIResponse(
+                APIResponse::NewRound(new_ballot.map(|b| b.into())),
+                self.pid,
+            );
+            self.network.send(CLIENT_PID, msg).await;
         }
     }
 
@@ -124,6 +145,7 @@ impl Server {
                 },
                 _ = tick_interval.tick() => {
                     self.omni_paxos.tick();
+                    self.omni_paxos_ui.tick(self.omni_paxos.get_ui_states());
                 },
                 else => (),
             }

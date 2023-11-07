@@ -14,7 +14,7 @@ use crate::messages::{ui::UIMessage, IOMessage};
 use crate::ui::ui_app::cli::CLIHandler;
 use crate::ui::ui_app::render::render;
 use crate::ui::ui_app::UIApp;
-use crate::utils::{UI_MAX_THROUGHPUT_SIZE, UI_TICK_RATE};
+use crate::utils::{UI_MAX_DECIDED_BARS, UI_TICK_RATE};
 
 mod ui_app;
 
@@ -65,21 +65,25 @@ impl UI {
             UIMessage::OmnipaxosNetworkUpdate(mut network_statue) => {
                 network_statue.nodes.sort();
                 network_statue.alive_nodes.sort();
-                self.ui_app.lock().await.network_state = network_statue;
+                self.ui_app.lock().await.set_network_state(network_statue);
                 self.update_ui().await;
             }
-            UIMessage::OmnipaxosResponse(response) => match response {
+            UIMessage::OmnipaxosResponse(response, pid) => match response {
                 APIResponse::Decided(idx) => {
                     let mut ui_app = self.ui_app.lock().await;
-                    ui_app.progress.finished = (idx - ui_app.progress.starting_idx) as u16;
-
+                    ui_app.progress.finished = idx - ui_app.progress.starting_idx;
                     ui_app.decided_idx = idx;
                 }
                 APIResponse::Get(key, value) => {
-                    self.ui_app
-                        .lock()
-                        .await
-                        .append_log(format!("The key: {key} has value: {:?}", value));
+                    {
+                        let mut ui_app = self.ui_app.lock().await;
+                        ui_app.append_log(format!("[Node {pid}] key: {key}, value: {:?}", value));
+                        if !ui_app.progress.is_ongoing
+                            && ui_app.progress.finished < ui_app.progress.total
+                        {
+                            ui_app.progress.finished += 1;
+                        }
+                    }
                     self.update_ui().await;
                 }
                 // Ignore this case. Will get notified in OmniPaxosNetworkUpdate instead
@@ -111,7 +115,7 @@ impl UI {
                 // Append log
                 if total_batched_num != 0 {
                     // Start new batch
-                    if ui_app.progress.is_ongoing == false {
+                    if !ui_app.progress.is_ongoing {
                         ui_app.progress.is_ongoing = true;
                         ui_app.progress.total = total_batched_num;
                         ui_app.progress.starting_idx = ui_app.decided_idx;
@@ -171,25 +175,29 @@ impl Ticker {
     pub async fn run(&mut self) {
         let mut ui_interval = tokio::time::interval(UI_TICK_RATE);
         let mut last_decided_idx: u64 = self.ui_app.lock().await.decided_idx;
+        let mut counter: f64 = 0.0;
         loop {
             tokio::select! {
                 _ = ui_interval.tick() => {
-                    {
-                        let mut ui_app = self.ui_app.lock().await;
-                        let throughput = (ui_app.decided_idx as f64 - last_decided_idx as f64).max(0.0) as f64 / (UI_TICK_RATE.as_millis() as f64 / 100.0) as f64;
-                        let round = if throughput as u64 == 0 {
-                            " ".to_string()
-                        } else {
-                            match ui_app.network_state.max_round {
-                            Some(round) => format!("{}", round.round_num),
-                            None => "0".to_string(),
-                        }
-                        };
-                        ui_app.throughput_data.insert(0, (round, throughput as u64));
-                        if ui_app.throughput_data.len() > UI_MAX_THROUGHPUT_SIZE {
-                            ui_app.throughput_data.pop();
-                        }
-                        last_decided_idx = ui_app.decided_idx;
+                    counter += 1.0;
+                    let mut ui_app = self.ui_app.lock().await;
+                    let num_decided = (ui_app.decided_idx - last_decided_idx) as f64;
+                    let round = if num_decided as u64 == 0 {
+                        " ".to_string()
+                    } else {
+                        match ui_app.network_state.max_round {
+                        Some(round) => format!("{}", round.round_num),
+                        None => "0".to_string(),
+                    }
+                    };
+                    ui_app.decided_data.insert(0, (round, num_decided as u64));
+                    if ui_app.decided_data.len() > UI_MAX_DECIDED_BARS {
+                        ui_app.decided_data.pop();
+                    }
+                    last_decided_idx = ui_app.decided_idx;
+                    if counter * UI_TICK_RATE.as_secs_f64() >= 1.0 {
+                        counter = 0.0;
+                        ui_app.throughput = num_decided/ UI_TICK_RATE.as_secs_f64();
                     }
                     self.io_sender.send(IOMessage::UIMessage(UIMessage::UpdateUi)).await.unwrap();
                 }
