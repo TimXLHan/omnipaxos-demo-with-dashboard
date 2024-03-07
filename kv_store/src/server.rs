@@ -1,3 +1,4 @@
+use crate::PID;
 use crate::database::Database;
 use crate::kv::KVCommand;
 use crate::{
@@ -31,6 +32,7 @@ pub enum APIResponse {
     Decided(u64),
     Get(String, Option<String>),
     NewRound(Option<Round>),
+    Happiness(bool)
 }
 
 pub struct Server {
@@ -39,6 +41,7 @@ pub struct Server {
     pub database: Database,
     pub last_decided_idx: u64,
     pub last_sent_leader: Option<Ballot>,
+    pub last_sent_happy: bool,
 }
 
 impl Server {
@@ -67,6 +70,15 @@ impl Server {
     async fn send_outgoing_msgs(&mut self) {
         let messages = self.omni_paxos.outgoing_messages();
         for msg in messages {
+            if let omnipaxos::messages::Message::BLE(ble_message) = &msg {
+                if let omnipaxos::messages::ballot_leader_election::HeartbeatMsg::Reply(reply) = &ble_message.msg {
+                    if *PID == reply.ballot.pid && reply.happy != self.last_sent_happy {
+                        let api_msg = Message::APIResponse(APIResponse::Happiness(reply.happy));
+                        self.network.send(0, api_msg).await;
+                        self.last_sent_happy = reply.happy;
+                    }
+                }
+            }
             let receiver = msg.get_receiver();
             self.network
                 .send(receiver, Message::OmniPaxosMsg(msg))

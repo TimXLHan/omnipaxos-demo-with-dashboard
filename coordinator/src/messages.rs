@@ -15,6 +15,7 @@ pub mod coordinator {
         OmnipaxosNodeJoined(u64),
         NewRound(u64, Option<Round>),
         Scenario(String),
+        Happiness(u64, bool),
     }
 
     /// Same as in KV demo
@@ -37,6 +38,7 @@ pub mod coordinator {
         Decided(u64),
         Get(String, Option<String>),
         NewRound(Option<Round>),
+        Happiness(bool),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

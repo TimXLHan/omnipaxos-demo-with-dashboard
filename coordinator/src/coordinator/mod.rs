@@ -91,6 +91,7 @@ pub struct KeyValue {
 pub struct NetworkState {
     pub(crate) nodes: Vec<u64>,
     pub(crate) alive_nodes: Vec<u64>,
+    pub(crate) happiness: HashMap<u64, bool>,
     pub(crate) partitions: HashSet<(u64, u64)>,
     pub(crate) max_round: Option<Round>,
 }
@@ -103,6 +104,7 @@ pub struct Coordinator {
     nodes: Vec<u64>,
     max_round: Arc<Mutex<Option<Round>>>,
     cmd_queue: Arc<Mutex<VecDeque<KVCommand>>>,
+    happiness: HashMap<u64, bool>,
 }
 
 impl Coordinator {
@@ -115,6 +117,7 @@ impl Coordinator {
             cmd_queue: Arc::new(Mutex::new(VecDeque::new())),
             nodes: vec![],
             max_round: Arc::new(Mutex::new(None)),
+            happiness: HashMap::new(),
         }
     }
 
@@ -137,6 +140,7 @@ impl Coordinator {
                 .collect(),
             partitions,
             max_round: self.max_round.lock().await.clone(),
+            happiness: self.happiness.clone(),
         }
     }
 
@@ -193,6 +197,12 @@ impl Coordinator {
                                     .send(IOMessage::CDMessage(CDMessage::NewRound(
                                         client_pid, round,
                                     )))
+                                    .await
+                                    .unwrap(),
+                                Message::APIResponse(APIResponse::Happiness(happy)) => sender
+                                    .send(IOMessage::CDMessage(CDMessage::Happiness(
+                                                client_pid, happy,
+                                                )))
                                     .await
                                     .unwrap(),
                                 Message::APIResponse(response) => sender
@@ -347,6 +357,10 @@ impl Coordinator {
                         "Must have 5 nodes to execute scenarios"
                     );
                     self.handle_scenario(scenario_type).await;
+                }
+                CDMessage::Happiness(client_pid, happy) => {
+                    self.happiness.insert(client_pid, happy);
+                    self.send_network_update().await;
                 }
             }
         }

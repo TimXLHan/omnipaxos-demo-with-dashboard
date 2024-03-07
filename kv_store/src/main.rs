@@ -70,6 +70,7 @@ async fn main() {
         database: database::Database::new(format!("db_{}", *PID).as_str()),
         last_decided_idx: 0,
         last_sent_leader: None,
+        last_sent_happy: true,
     };
     server.run().await;
 }

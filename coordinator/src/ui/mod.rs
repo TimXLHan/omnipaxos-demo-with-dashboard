@@ -85,6 +85,7 @@ impl UI {
                 }
                 // Ignore this case. Will get notified in OmniPaxosNetworkUpdate instead
                 APIResponse::NewRound(_) => (),
+                APIResponse::Happiness(_) => (),
             },
             UIMessage::OmnipaxosNodeCrashed(id) => {
                 self.ui_app

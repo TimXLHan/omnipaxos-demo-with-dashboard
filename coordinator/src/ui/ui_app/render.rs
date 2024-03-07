@@ -178,11 +178,17 @@ fn make_canvas(network_status: &NetworkState) -> CanvasComponents {
     // Labels
     let mut labels = HashMap::new();
     for (node_id, rect) in &nodes_with_rects {
+        let happy = network_status.happiness.get(node_id);
+            let happy_label = match happy {
+            Some(true) => " :D",
+            Some(false) => " :(",
+            None => "",
+        };
         let label = Label {
             x: rect.x + rect.width / 4.0,
             y: rect.y + rect.width / 3.0,
             span: Span::styled(
-                String::from("Node".to_string() + &*node_id.to_string()),
+                String::from("Node".to_string() + &*node_id.to_string() + happy_label),
                 Style::default().fg(Color::White),
             ),
         };
